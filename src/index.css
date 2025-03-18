@@ -1,0 +1,89 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+@keyframes gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.btn-primary {
+  @apply relative overflow-hidden;
+  @apply px-6 py-4 rounded-xl font-medium text-white;
+  @apply transition-all duration-300;
+  background: linear-gradient(
+    90deg,
+    rgba(185, 121, 253, 0.8) 0%,
+    rgba(244, 114, 182, 0.8) 50%,
+    rgba(219, 39, 219, 0.8) 100%
+  );
+  background-size: 200% 100%;
+  animation: gradient 5s ease infinite;
+}
+
+.btn-primary:hover {
+  @apply transform scale-[1.02] shadow-lg;
+  background-size: 200% 100%;
+}
+
+.btn-primary:active {
+  @apply transform scale-[0.98] shadow-inner;
+  background: linear-gradient(
+    90deg,
+    rgba(219, 39, 219, 0.9) 0%,
+    rgba(244, 114, 182, 0.9) 50%,
+    rgba(185, 121, 253, 0.9) 100%
+  );
+}
+
+.btn-primary:before {
+  content: '';
+  @apply absolute inset-0 rounded-xl;
+  @apply bg-white/20 opacity-0 transition-opacity duration-300;
+}
+
+.btn-primary:hover:before {
+  @apply opacity-100;
+}
+
+.btn-primary:disabled {
+  @apply opacity-50 cursor-not-allowed transform-none;
+}
+
+.btn-secondary {
+  @apply px-6 py-4 rounded-xl font-medium;
+  @apply bg-white/10 text-white;
+  @apply transition-all duration-300;
+  @apply hover:bg-white/20 hover:shadow-lg;
+  @apply active:transform active:scale-[0.98] active:bg-white/30 active:shadow-inner;
+}
+
+.btn-outline {
+  @apply px-6 py-4 rounded-xl font-medium;
+  @apply border-2 border-purple-500 text-white;
+  @apply transition-all duration-300;
+  @apply hover:border-white/40 hover:bg-white/5;
+  @apply active:transform active:scale-[0.98];
+}
