@@ -348,35 +348,35 @@ export function IndividualReviewStep({
             </div>
 
             {/* Contatos Adicionais */}
-            {(holderData.emails?.filter(email => !email.selected)?.length > 0 || 
-              holderData.phones?.filter(phone => !phone.selected)?.length > 0) && (
+            {(holderData.emails?.filter(email => email.selected)?.length > 0 || 
+              holderData.phones?.filter(phone => phone.selected)?.length > 0) && (
               <div className="mt-4 pt-4 border-t border-purple-400/30">
                 <h4 className="text-lg font-medium text-white mb-4 flex items-center">
                   <svg className="w-5 h-5 mr-2 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                   </svg>
-                  Contatos Adicionais
+                  Contatos Selecionados
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Emails Adicionais */}
+                  {/* Emails Selecionados */}
                   {holderData.emails
-                    ?.filter(email => !email.selected)
+                    ?.filter(email => email.selected)
                     .map((email, index) => (
                       <Field 
                         key={`email-${email.id}`}
-                        label={`Email Adicional ${index + 1}`} 
+                        label={`Email ${index + 1}`} 
                         value={email.address || '-'} 
                       />
                     ))
                   }
                   
-                  {/* Telefones Adicionais */}
+                  {/* Telefones Selecionados */}
                   {holderData.phones
-                    ?.filter(phone => !phone.selected)
+                    ?.filter(phone => phone.selected)
                     .map((phone, index) => (
                       <Field 
                         key={`phone-${phone.id}`}
-                        label={`Telefone Adicional ${index + 1}`} 
+                        label={`Telefone ${index + 1}`} 
                         value={phone.formattedNumber || '-'} 
                       />
                     ))

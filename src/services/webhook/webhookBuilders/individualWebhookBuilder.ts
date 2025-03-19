@@ -118,27 +118,76 @@ export class IndividualWebhookBuilder extends BaseWebhookBuilder {
   }
 
   private buildContactData(holderData: any): any {
-    const contact: any = {
+    console.log('[IndividualWebhookBuilder] Dados de contato recebidos:', {
       phone: holderData.phone,
       email: holderData.email,
+      phones: holderData.phones,
+      emails: holderData.emails,
+      additionalPhones: holderData.additionalPhones
+    });
+
+    const contact: any = {
+      phone: holderData.phone || '',
+      email: holderData.email || '',
       additionalPhones: {},
       additionalEmails: {}
     };
 
-    // Adiciona telefones adicionais
-    if (Array.isArray(holderData.additionalPhones)) {
-      holderData.additionalPhones.forEach((phone: string, index: number) => {
-        contact.additionalPhones[(index + 1).toString()] = phone;
-      });
+    // Busca por telefones e emails selecionados
+    const selectedPhones = holderData.phones?.filter((p: any) => p.selected) || [];
+    const selectedEmails = holderData.emails?.filter((e: any) => e.selected) || [];
+    
+    console.log('[IndividualWebhookBuilder] Telefones selecionados:', selectedPhones);
+    console.log('[IndividualWebhookBuilder] Emails selecionados:', selectedEmails);
+
+    // Define o telefone principal como o primeiro telefone selecionado
+    if (selectedPhones.length > 0) {
+      const mainPhone = selectedPhones[0];
+      contact.phone = mainPhone.formattedNumber || `(${mainPhone.ddd}) ${mainPhone.number}`;
+    } else if (!contact.phone && holderData.phone) {
+      // Fallback para o campo phone padrão se não houver telefone selecionado
+      contact.phone = holderData.phone;
     }
 
-    // Adiciona emails adicionais
-    if (Array.isArray(holderData.additionalEmails)) {
-      holderData.additionalEmails.forEach((email: string, index: number) => {
-        contact.additionalEmails[(index + 1).toString()] = email;
-      });
+    // Define o email principal como o primeiro email selecionado
+    if (selectedEmails.length > 0) {
+      const mainEmail = selectedEmails[0];
+      contact.email = mainEmail.address;
+    } else if (!contact.email && holderData.email) {
+      // Fallback para o campo email padrão se não houver email selecionado
+      contact.email = holderData.email;
     }
 
+    // Um telefone é válido se tiver o formato completo: (XX) XXXXX-XXXX ou (XX) XXXX-XXXX
+    const isValidPhone = (phone: string) => {
+      return phone && phone.match(/^\(\d{2}\) \d{4,5}-\d{4}$/);
+    };
+
+    // Adiciona telefones adicionais selecionados (a partir do segundo)
+    if (selectedPhones.length > 1) {
+      const additionalSelectedPhones = selectedPhones.slice(1);
+      
+      additionalSelectedPhones
+        .map((p: any) => p.formattedNumber || `(${p.ddd}) ${p.number}`)
+        .filter((phone: string) => isValidPhone(phone))
+        .forEach((phone: string, index: number) => {
+          contact.additionalPhones[(index + 1).toString()] = phone;
+        });
+    }
+
+    // Adiciona emails adicionais selecionados (a partir do segundo)
+    if (selectedEmails.length > 1) {
+      const additionalSelectedEmails = selectedEmails.slice(1);
+      
+      additionalSelectedEmails
+        .map((e: any) => e.address)
+        .filter((email: string) => email && email.includes('@'))
+        .forEach((email: string, index: number) => {
+          contact.additionalEmails[(index + 1).toString()] = email;
+        });
+    }
+
+    console.log('[IndividualWebhookBuilder] Dados de contato formatados:', contact);
     return contact;
   }
 
@@ -173,6 +222,7 @@ export class IndividualWebhookBuilder extends BaseWebhookBuilder {
     });
 
     // Endereço
+    // Verifica se existe endereço no formato de objeto ou no array addresses
     if (holder.address) {
       this.params.append('holder_address_cep', holder.address.cep || '');
       this.params.append('holder_address_street', holder.address.street || '');
@@ -181,7 +231,27 @@ export class IndividualWebhookBuilder extends BaseWebhookBuilder {
       this.params.append('holder_address_neighborhood', holder.address.neighborhood || '');
       this.params.append('holder_address_city', holder.address.city || '');
       this.params.append('holder_address_state', holder.address.state || '');
+    } 
+    // Verifica se existem endereços no array e usa o endereço selecionado
+    else if (holder.addresses && holder.addresses.length > 0) {
+      // Procura o endereço selecionado, ou usa o primeiro endereço da lista
+      const selectedAddress = holder.addresses.find((addr: any) => addr.selected) || holder.addresses[0];
+      
+      if (selectedAddress) {
+        this.params.append('holder_address_cep', selectedAddress.cep || selectedAddress.postal_code || '');
+        this.params.append('holder_address_street', selectedAddress.street || '');
+        this.params.append('holder_address_number', selectedAddress.number?.toString() || '');
+        this.params.append('holder_address_complement', selectedAddress.complement || '');
+        this.params.append('holder_address_neighborhood', selectedAddress.neighborhood || '');
+        this.params.append('holder_address_city', selectedAddress.city || '');
+        this.params.append('holder_address_state', selectedAddress.state || '');
+      }
     }
+    
+    console.log('[IndividualWebhookBuilder] Parâmetros de endereço:', 
+      Array.from(this.params.entries())
+        .filter(([key]) => key.startsWith('holder_address_'))
+    );
   }
 
   private buildDependentsParams(): void {

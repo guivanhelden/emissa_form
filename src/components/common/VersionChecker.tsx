@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from 'react';
 
-// Versão atual da aplicação (deve ser atualizada a cada deploy)
-const APP_VERSION = '1.0.0'; 
 const VERSION_CHECK_INTERVAL = 60 * 1000; // 1 minuto
 
 interface VersionCheckerProps {
@@ -10,44 +8,62 @@ interface VersionCheckerProps {
 
 export function VersionChecker({ children }: VersionCheckerProps = {}) {
   const [needsRefresh, setNeedsRefresh] = useState(false);
+  const [currentAppVersion, setCurrentAppVersion] = useState('');
   
   useEffect(() => {
-    // Verifica a versão armazenada no localStorage
-    const storedVersion = localStorage.getItem('app_version');
-    
-    // Se não houver versão armazenada ou for diferente da atual, atualiza
-    if (!storedVersion) {
-      localStorage.setItem('app_version', APP_VERSION);
-    } else if (storedVersion !== APP_VERSION) {
-      // Limpa o cache do navegador
-      if ('caches' in window) {
-        caches.keys().then(cacheNames => {
-          cacheNames.forEach(cacheName => {
-            caches.delete(cacheName);
-          });
-        });
-      }
-      
-      // Atualiza a versão no localStorage
-      localStorage.setItem('app_version', APP_VERSION);
-      
-      // Indica que a página precisa ser atualizada
-      setNeedsRefresh(true);
-    }
-    
-    // Configura verificação periódica de versão
-    const checkVersion = async () => {
+    // Função para obter a versão atual do servidor
+    const fetchCurrentVersion = async () => {
       try {
-        // Simula uma requisição para verificar a versão atual no servidor
-        // Em produção, substitua por uma chamada real à API
-        const response = await fetch('/version.json?t=' + new Date().getTime(), {
-          cache: 'no-store'
-        });
+        // Tenta buscar o arquivo na pasta assets primeiro, depois tenta na raiz como fallback
+        const urls = [
+          '/assets/version.json',
+          '/version.json',
+          '/dist/version.json'
+        ];
         
-        if (response.ok) {
+        let response;
+        let fetchSuccess = false;
+        
+        // Tenta cada URL até encontrar uma que funcione
+        for (const url of urls) {
+          try {
+            response = await fetch(`${url}?t=${new Date().getTime()}`, {
+              cache: 'no-store'
+            });
+            
+            if (response.ok) {
+              fetchSuccess = true;
+              break;
+            }
+          } catch (err) {
+            console.log(`Falha ao buscar ${url}:`, err);
+          }
+        }
+        
+        if (fetchSuccess && response) {
           const data = await response.json();
-          if (data.version && data.version !== APP_VERSION) {
-            setNeedsRefresh(true);
+          if (data.version) {
+            setCurrentAppVersion(data.version);
+            
+            // Verifica a versão armazenada no localStorage
+            const storedVersion = localStorage.getItem('app_version');
+            
+            // Se não houver versão armazenada ou for diferente da atual, atualiza
+            if (!storedVersion) {
+              localStorage.setItem('app_version', data.version);
+            } else if (storedVersion !== data.version) {
+              // Limpa o cache do navegador
+              if ('caches' in window) {
+                caches.keys().then(cacheNames => {
+                  cacheNames.forEach(cacheName => {
+                    caches.delete(cacheName);
+                  });
+                });
+              }
+              
+              // Indica que a página precisa ser atualizada
+              setNeedsRefresh(true);
+            }
           }
         }
       } catch (error) {
@@ -56,26 +72,33 @@ export function VersionChecker({ children }: VersionCheckerProps = {}) {
     };
     
     // Verifica a versão imediatamente
-    checkVersion();
+    fetchCurrentVersion();
     
     // Configura verificação periódica
-    const interval = setInterval(checkVersion, VERSION_CHECK_INTERVAL);
+    const interval = setInterval(() => {
+      fetchCurrentVersion();
+    }, VERSION_CHECK_INTERVAL);
     
     return () => clearInterval(interval);
   }, []);
   
+  console.log('Versão atual:', currentAppVersion, 'Precisa atualizar:', needsRefresh);
+  
   // Se precisar atualizar, mostra um banner
   if (needsRefresh) {
     return (
-      <div className="fixed top-0 left-0 right-0 bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-2 px-4 flex justify-between items-center z-50">
-        <p className="text-sm">Uma nova versão está disponível. Atualize a página para obter as últimas melhorias.</p>
-        <button 
-          onClick={() => window.location.reload()} 
-          className="bg-white text-purple-600 px-3 py-1 rounded-md text-sm font-medium hover:bg-purple-100 transition-colors"
-        >
-          Atualizar agora
-        </button>
-      </div>
+      <>
+        <div className="fixed top-0 left-0 right-0 bg-gradient-to-r from-purple-600 to-indigo-600 text-white py-2 px-4 flex justify-between items-center z-50 shadow-md">
+          <p className="text-sm">Uma nova versão está disponível. Atualize a página para obter as últimas melhorias.</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="bg-white text-purple-600 px-3 py-1 rounded-md text-sm font-medium hover:bg-purple-100 transition-colors"
+          >
+            Atualizar agora
+          </button>
+        </div>
+        {children}
+      </>
     );
   }
   

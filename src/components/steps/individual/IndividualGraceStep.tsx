@@ -45,7 +45,8 @@ export function IndividualGraceStep({
       let query = supabase
         .from('operadoras')
         .select('id, nome, logo_url, count:id', { count: 'exact' })
-        .order('nome');
+        .eq('operadora', true)
+        .order('categoria_id', { ascending: true });
 
       if (search.trim()) {
         const normalizedSearch = search.trim().toLowerCase()

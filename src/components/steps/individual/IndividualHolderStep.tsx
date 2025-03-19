@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { FormField } from '../../common/FormField';
 import { DataSelectionCard } from '../../common/DataSelectionCard';
 import { useIndividualHolder } from '../../../contexts/individual/IndividualHolderContext';
+import { shiftDataApi } from '../../../services';
 import { 
   IndividualHolderData,
   DatastoneAddress,
@@ -10,6 +11,7 @@ import {
   Gender,
   MaritalStatus
 } from '../../../types/individual';
+import axios from 'axios';
 
 // Constantes
 const SHIFTDATA_API_URL = import.meta.env.VITE_SHIFTDATA_API_URL || '/api-shiftgroup/api';
@@ -43,7 +45,6 @@ export function IndividualHolderStep({
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
-  const [manualFilling, setManualFilling] = useState(false);
 
   const formatCpf = (value: string) => {
     return value
@@ -52,6 +53,13 @@ export function IndividualHolderStep({
       .replace(/(\d{3})(\d)/, '$1.$2')
       .replace(/(\d{3})(\d{1,2})/, '$1-$2')
       .substring(0, 14);
+  };
+
+  const formatCep = (value: string) => {
+    return value
+      .replace(/\D/g, '')
+      .replace(/(\d{5})(\d)/, '$1-$2')
+      .substring(0, 9);
   };
 
   const handleFieldChange = (field: keyof IndividualHolderData, value: any) => {
@@ -73,35 +81,28 @@ export function IndividualHolderStep({
       setFieldErrors({});
 
       try {
-        // Usando o proxy configurado no vite.config.js
-        const response = await fetch(
-          `${SHIFTDATA_API_URL}/PessoaFisica?cpf=${value.replace(/\D/g, '')}`,
-          {
-            method: 'GET',
-            headers: {
-              'accept': 'application/json',
-              'Authorization': `Bearer ${SHIFTDATA_API_TOKEN}`
-            }
-          }
+        // Usando o serviço shiftDataApi em vez de fetch diretamente
+        const response = await shiftDataApi.get(
+          `/PessoaFisica?cpf=${value.replace(/\D/g, '')}`
         );
 
-        // Verificar se a resposta contém um erro de saldo insuficiente
-        if (response.status === 402 || response.status === 429) {
-          // Código 402 (Payment Required) ou 429 (Too Many Requests) indicam possíveis problemas de saldo
-          setManualFilling(true);
-          setError('Não foi possível consultar os dados automaticamente. Por favor, preencha manualmente os campos.');
-          setIsLoading(false);
-          return;
-        }
-
-        if (!response.ok) {
-          throw new Error('Erro ao buscar dados do titular');
-        }
-
-        const responseData = await response.json();
+        // Verificar a resposta diretamente
+        const responseData = response.data;
         
         if (responseData && responseData.result) {
           const person = responseData.result;
+          
+          // Filtra endereços, telefones e emails para remover valores inválidos
+          const validEmails = person.Emails?.filter((email: any) => 
+            email.Email && email.Email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)
+          ) || [];
+          
+          const validPhones = person.Telefones?.filter((phone: any) => 
+            phone.DDD && phone.Telefone && phone.DDD.length >= 2 && phone.Telefone.length >= 8
+          ) || [];
+          
+          console.log('Telefones retornados pela API:', person.Telefones);
+          console.log('Telefones válidos:', validPhones);
           
           // Normalizar dados da API
           const normalizedData = {
@@ -126,23 +127,29 @@ export function IndividualHolderStep({
               district: addr.Bairro || '',
               postal_code: addr.CEP || ''
             })) || [],
-            // Tratamento de múltiplos telefones
-            phones: person.Telefones?.map((phone: any) => ({
-              id: crypto.randomUUID(),
-              selected: false,
-              ddd: phone.DDD || '',
-              number: phone.Telefone || '',
-              formattedNumber: `(${phone.DDD}) ${phone.Telefone}`,
-              type: phone.TipoTelefone.includes('MÓVEL') ? 'MOBILE' : 'LANDLINE'
-            })) || [],
-            // Tratamento de múltiplos emails
-            emails: person.Emails?.map((emailData: any) => ({
+            // Tratamento de múltiplos telefones (apenas válidos)
+            phones: validPhones.map((phone: any) => {
+              // Garantir formatação correta do telefone
+              const formattedPhone = `(${phone.DDD}) ${phone.Telefone.replace(/^(\d+)(\d{4})$/, '$1-$2')}`;
+              return {
+                id: crypto.randomUUID(),
+                selected: false,
+                ddd: phone.DDD || '',
+                number: phone.Telefone || '',
+                formattedNumber: formattedPhone,
+                type: phone.TipoTelefone?.includes('MÓVEL') ? 'MOBILE' : 'LANDLINE'
+              };
+            }),
+            // Tratamento de múltiplos emails (apenas válidos)
+            emails: validEmails.map((emailData: any) => ({
               id: crypto.randomUUID(),
               selected: false,
               address: emailData.Email || '', 
               type: 'PERSONAL'
-            })) || []
+            }))
           };
+
+          console.log('Phones normalizados:', normalizedData.phones);
 
           setHolderData(prev => ({
             ...prev,
@@ -157,16 +164,20 @@ export function IndividualHolderStep({
             updateContact('email', normalizedData.emails[0], true);
           }
 
-          setManualFilling(false);
           setError(null);
         } else {
           setError('Nenhum dado encontrado para o CPF informado. Por favor, preencha manualmente os campos.');
-          setManualFilling(true);
         }
       } catch (err) {
         console.error('Erro ao buscar dados:', err);
-        setError('Erro ao buscar dados do titular. Por favor, preencha manualmente os campos.');
-        setManualFilling(true);
+        
+        // Verificar códigos de erro específicos
+        if (axios.isAxiosError(err) && (err.response?.status === 402 || err.response?.status === 429)) {
+          // Código 402 (Payment Required) ou 429 (Too Many Requests) indicam possíveis problemas de saldo
+          setError('Não foi possível consultar os dados automaticamente. Por favor, preencha manualmente os campos.');
+        } else {
+          setError('Erro ao buscar dados do titular. Por favor, preencha manualmente os campos.');
+        }
       } finally {
         setIsLoading(false);
       }
@@ -190,6 +201,13 @@ export function IndividualHolderStep({
   });
 
   const handleEmailSelection = (id: string) => {
+    // Primeiro verifica se o email selecionado é válido
+    const emailToSelect = holderData.emails.find(email => email.id === id);
+    if (emailToSelect && (!emailToSelect.address || !emailToSelect.address.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/))) {
+      // Se for um email inválido, não permitir seleção
+      return;
+    }
+    
     const updatedEmails = holderData.emails.map(email => ({
       ...email,
       selected: email.id === id ? !email.selected : email.selected
@@ -249,15 +267,28 @@ export function IndividualHolderStep({
   };
 
   const handlePhoneSelection = (id: string) => {
+    // Primeiro verifica se o telefone selecionado é válido
+    const phoneToSelect = holderData.phones.find(phone => phone.id === id);
+    if (!phoneToSelect || !phoneToSelect.ddd || !phoneToSelect.number || phoneToSelect.ddd.length < 2) {
+      // Se for um telefone inválido, não permitir seleção
+      return;
+    }
+    
     const updatedPhones = holderData.phones.map(phone => ({
       ...phone,
       selected: phone.id === id ? !phone.selected : phone.selected
     }));
 
+    // Garante que o telefone formatado seja exibido no campo principal
+    const selectedPhone = updatedPhones.find(p => p.id === id && p.selected);
+    const formattedNumber = selectedPhone 
+      ? (selectedPhone.formattedNumber || `(${selectedPhone.ddd}) ${selectedPhone.number}`)
+      : '';
+
     setHolderData(prev => ({
       ...prev,
       phones: updatedPhones,
-      phone: updatedPhones.find(p => p.selected)?.formattedNumber || '' 
+      phone: formattedNumber
     }));
 
     // Atualizar contatos
@@ -265,23 +296,19 @@ export function IndividualHolderStep({
     if (selectedPhones.length > 0) {
       // Primeiro telefone vai para o contato principal
       const mainPhone = selectedPhones[0];
-      updateContact('phone', {
-        id: mainPhone.id,
-        selected: true,
-        ddd: mainPhone.ddd,
-        number: mainPhone.number,
-        formattedNumber: mainPhone.formattedNumber,
-        type: mainPhone.type
-      }, true);
+      
+      // Garante que o formattedNumber esteja correto
+      const formattedMainPhone = {
+        ...mainPhone,
+        formattedNumber: mainPhone.formattedNumber || `(${mainPhone.ddd}) ${mainPhone.number}`
+      };
+      
+      updateContact('phone', formattedMainPhone, true);
       
       // Demais telefones vão para contatos adicionais
       const additionalPhones = selectedPhones.slice(1).map(phone => ({
-        id: phone.id,
-        selected: true,
-        ddd: phone.ddd,
-        number: phone.number,
-        formattedNumber: phone.formattedNumber,
-        type: phone.type
+        ...phone,
+        formattedNumber: phone.formattedNumber || `(${phone.ddd}) ${phone.number}`
       }));
 
       setContactData(prev => ({
@@ -312,13 +339,18 @@ export function IndividualHolderStep({
   };
 
   const renderMultipleEmails = () => {
-    if (!holderData.emails || holderData.emails.length === 0) return null;
+    // Verificar se existem emails e se são válidos
+    const validEmails = holderData.emails?.filter(email => 
+      email.address && email.address.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)
+    ) || [];
+    
+    if (validEmails.length === 0) return null;
 
     return (
       <div className="mt-4">
         <h4 className="text-lg font-semibold text-white mb-2">Emails Disponíveis</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {holderData.emails.map((email) => (
+          {validEmails.map((email) => (
             <div
               key={email.id}
               className={`p-4 border rounded-lg cursor-pointer transition-all ${
@@ -346,13 +378,22 @@ export function IndividualHolderStep({
   };
 
   const renderMultiplePhones = () => {
+    // Verificar se existem telefones no array phones
     if (!holderData.phones || holderData.phones.length === 0) return null;
+    
+    // Filtramos os telefones para exibir apenas os válidos
+    // Um telefone é válido se tiver DDD e número, mesmo que a formatação não seja exata
+    const validPhones = holderData.phones.filter(phone => 
+      phone.ddd && phone.number && phone.ddd.length >= 2
+    );
+    
+    if (validPhones.length === 0) return null;
 
     return (
       <div className="mt-4">
         <h4 className="text-lg font-semibold text-white mb-2">Telefones Disponíveis</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {holderData.phones.map((phone) => (
+          {validPhones.map((phone) => (
             <div
               key={phone.id}
               className={`p-4 border rounded-lg cursor-pointer transition-all ${
@@ -362,7 +403,9 @@ export function IndividualHolderStep({
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-medium text-white">{phone.formattedNumber}</p>
+                  <p className="font-medium text-white">
+                    {phone.formattedNumber || `(${phone.ddd}) ${phone.number}`}
+                  </p>
                   <p className="text-sm text-white/60">Tipo: {phone.type === 'MOBILE' ? 'Celular' : 'Fixo'}</p>
                 </div>
                 <input
@@ -492,6 +535,186 @@ export function IndividualHolderStep({
     }
   };
 
+  // Cria estrutura de telefone ao preencher manualmente
+  const updatePhoneManually = (phoneValue: string) => {
+    const formattedPhone = formatPhone(phoneValue);
+    
+    // Atualiza o valor formatado no campo de telefone
+    handleFieldChange('phone', formattedPhone);
+    
+    // Identificador para o telefone manual
+    const manualPhoneId = 'manual-phone';
+    
+    // Verifica se é um telefone válido completo
+    const isValidPhone = formattedPhone && formattedPhone.match(/^\(\d{2}\) \d{4,5}-\d{4}$/);
+    
+    if (isValidPhone) {
+      const [, ddd = '', number = ''] = formattedPhone.match(/\((\d{2})\) (.*)/) || [];
+      
+      // Verifica se já existe um telefone manual com o mesmo ID no array
+      const existingManualPhoneIndex = holderData.phones?.findIndex(p => p.id === manualPhoneId);
+      
+      const phoneObj: DatastonePhone = {
+        id: manualPhoneId,
+        ddd,
+        number,
+        formattedNumber: formattedPhone,
+        type: 'MOBILE' as 'MOBILE',
+        selected: true
+      };
+      
+      // Atualiza o array de telefones
+      let updatedPhones: DatastonePhone[] = [];
+      
+      if (existingManualPhoneIndex >= 0) {
+        // Se já existe um telefone manual, atualiza ele
+        updatedPhones = [...(holderData.phones || [])];
+        updatedPhones[existingManualPhoneIndex] = {
+          ...updatedPhones[existingManualPhoneIndex],
+          ddd,
+          number,
+          formattedNumber: formattedPhone,
+          selected: true
+        };
+        
+        // Desmarca os outros telefones
+        updatedPhones = updatedPhones.map(p => 
+          p.id !== manualPhoneId ? {...p, selected: false} : p
+        );
+      } else {
+        // Se não existe, cria um novo e desmarca os existentes
+        updatedPhones = (holderData.phones || []).map(p => ({...p, selected: false}));
+        updatedPhones.push(phoneObj);
+      }
+      
+      // Atualiza o estado
+      setHolderData(prev => ({
+        ...prev,
+        phones: updatedPhones,
+        ddd,
+        number
+      }));
+      
+      // Atualiza o contato
+      updateContact('phone', phoneObj, true);
+    } else {
+      // Se o telefone for inválido, procura e remove o telefone manual se existir
+      const existingManualPhoneIndex = holderData.phones?.findIndex(p => p.id === manualPhoneId);
+      
+      if (existingManualPhoneIndex >= 0) {
+        // Cria uma cópia do array atual de telefones
+        const updatedPhones = [...(holderData.phones || [])];
+        
+        // Remove o telefone manual
+        updatedPhones.splice(existingManualPhoneIndex, 1);
+        
+        // Atualiza o estado sem o telefone manual
+        setHolderData(prev => ({
+          ...prev,
+          phones: updatedPhones
+        }));
+        
+        // Se não tinha nenhum telefone selecionado, limpa o contato principal
+        if (!updatedPhones.some(p => p.selected)) {
+          // Criamos um objeto vazio mas com as propriedades necessárias
+          const emptyPhone: DatastonePhone = {
+            id: 'empty',
+            ddd: '',
+            number: '',
+            formattedNumber: '',
+            type: 'MOBILE',
+            selected: false
+          };
+          updateContact('phone', emptyPhone, true);
+        }
+      }
+    }
+  };
+  
+  // Cria estrutura de email ao preencher manualmente
+  const updateEmailManually = (emailValue: string) => {
+    // Atualiza o valor do email no campo, independente da validação
+    handleFieldChange('email', emailValue);
+    
+    // Identificador para o email manual
+    const manualEmailId = 'manual-email';
+    
+    // Verifica se é um email válido completo
+    const isValidEmail = emailValue && emailValue.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
+    
+    if (isValidEmail) {
+      // Se for válido, cria/atualiza o objeto de email
+      const existingManualEmailIndex = holderData.emails?.findIndex(e => e.id === manualEmailId);
+      
+      const emailObj: DatastoneEmail = {
+        id: manualEmailId,
+        address: emailValue,
+        type: 'PERSONAL' as 'PERSONAL',
+        selected: true
+      };
+      
+      // Atualiza o array de emails
+      let updatedEmails: DatastoneEmail[] = [];
+      
+      if (existingManualEmailIndex >= 0) {
+        // Se já existe um email manual, atualiza ele
+        updatedEmails = [...(holderData.emails || [])];
+        updatedEmails[existingManualEmailIndex] = {
+          ...updatedEmails[existingManualEmailIndex],
+          address: emailValue,
+          selected: true
+        };
+        
+        // Desmarca os outros emails
+        updatedEmails = updatedEmails.map(e => 
+          e.id !== manualEmailId ? {...e, selected: false} : e
+        );
+      } else {
+        // Se não existe, cria um novo e desmarca os existentes
+        updatedEmails = (holderData.emails || []).map(e => ({...e, selected: false}));
+        updatedEmails.push(emailObj);
+      }
+      
+      // Atualiza o estado
+      setHolderData(prev => ({
+        ...prev,
+        emails: updatedEmails
+      }));
+      
+      // Atualiza o contato
+      updateContact('email', emailObj, true);
+    } else {
+      // Se o email for inválido, procura e remove o email manual se existir
+      const existingManualEmailIndex = holderData.emails?.findIndex(e => e.id === manualEmailId);
+      
+      if (existingManualEmailIndex >= 0) {
+        // Cria uma cópia do array atual de emails
+        const updatedEmails = [...(holderData.emails || [])];
+        
+        // Remove o email manual
+        updatedEmails.splice(existingManualEmailIndex, 1);
+        
+        // Atualiza o estado sem o email manual
+        setHolderData(prev => ({
+          ...prev,
+          emails: updatedEmails
+        }));
+        
+        // Se não tinha nenhum email selecionado, limpa o contato principal
+        if (!updatedEmails.some(e => e.selected)) {
+          // Criamos um objeto vazio mas com as propriedades necessárias
+          const emptyEmail: DatastoneEmail = {
+            id: 'empty',
+            address: '',
+            type: 'PERSONAL',
+            selected: false
+          };
+          updateContact('email', emptyEmail, true);
+        }
+      }
+    }
+  };
+
   return (
     <div className="w-full max-w-4xl mx-auto">
       <div className="bg-gradient-to-r from-purple-800/50 to-violet-800/50 p-6 rounded-xl mb-8 border border-purple-500/30 shadow-lg">
@@ -574,7 +797,7 @@ export function IndividualHolderStep({
                                : 'border-purple-500 focus:border-white/40'
                            }`}
                   required
-                  disabled={isLoading || !manualFilling}
+                  disabled={isLoading}
                 />
               </FormField>
 
@@ -586,7 +809,7 @@ export function IndividualHolderStep({
                   className="w-full px-6 py-4 bg-white/10 border border-purple-500 rounded-lg
                            text-white focus:outline-none focus:border-white/40 transition-colors"
                   required
-                  disabled={isLoading || !manualFilling}
+                  disabled={isLoading}
                   max={new Date(new Date().setFullYear(new Date().getFullYear() - 18)).toISOString().split('T')[0]}
                 />
               </FormField>
@@ -603,7 +826,7 @@ export function IndividualHolderStep({
                            text-white placeholder:text-white/60 focus:outline-none focus:border-white/40
                            transition-colors"
                   required
-                  disabled={isLoading || !manualFilling}
+                  disabled={isLoading}
                 />
               </FormField>
 
@@ -617,7 +840,7 @@ export function IndividualHolderStep({
                            text-white placeholder:text-white/60 focus:outline-none focus:border-white/40
                            transition-colors"
                   required
-                  disabled={isLoading || !manualFilling}
+                  disabled={isLoading}
                 />
               </FormField>
             </div>
@@ -631,13 +854,13 @@ export function IndividualHolderStep({
                 <input
                   type="email"
                   value={holderData.email}
-                  onChange={(e) => handleFieldChange('email', e.target.value)}
+                  onChange={(e) => updateEmailManually(e.target.value)}
                   placeholder="email@exemplo.com"
                   className="w-full px-6 py-4 bg-white/10 border border-purple-500 rounded-lg
                            text-white placeholder:text-white/60 focus:outline-none focus:border-white/40
                            transition-colors"
                   required
-                  disabled={isLoading || !manualFilling}
+                  disabled={isLoading}
                 />
               </FormField>
 
@@ -645,23 +868,13 @@ export function IndividualHolderStep({
                 <input
                   type="text"
                   value={holderData.phone}
-                  onChange={(e) => {
-                    const formattedPhone = formatPhone(e.target.value);
-                    const [, ddd = '', number = ''] = formattedPhone.match(/\((\d{2})\) (.*)/) || [];
-                    
-                    handleFieldChange('phone', formattedPhone);
-                    setHolderData(prev => ({
-                      ...prev,
-                      ddd,
-                      number
-                    }));
-                  }}
+                  onChange={(e) => updatePhoneManually(e.target.value)}
                   placeholder="(00) 00000-0000"
                   className="w-full px-6 py-4 bg-white/10 border border-purple-500 rounded-lg
                            text-white placeholder:text-white/60 focus:outline-none focus:border-white/40
                            transition-colors"
                   required
-                  disabled={isLoading || !manualFilling}
+                  disabled={isLoading}
                 />
               </FormField>
             </div>
@@ -742,11 +955,12 @@ export function IndividualHolderStep({
                   type="text"
                   value={holderData.addresses.find(addr => addr.selected)?.postal_code || ''}
                   onChange={(e) => {
+                    const formattedCep = formatCep(e.target.value);
                     const address = {
                       ...holderData.addresses[0] || {},
                       id: holderData.addresses[0]?.id || crypto.randomUUID(),
-                      postal_code: e.target.value,
-                      cep: e.target.value,
+                      postal_code: formattedCep,
+                      cep: formattedCep,
                       selected: true
                     };
                     updateAddress(address as DatastoneAddress);

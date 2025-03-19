@@ -66,6 +66,48 @@ export const routeGuard = {
     } catch (error) {
       debugUtils.log(`Erro na limpeza após navegação: ${error}`);
     }
+  },
+
+  /**
+   * Processa parâmetros da URL, incluindo configurações de idioma
+   */
+  processUrlParameters: (): void => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      let paramsChanged = false;
+      
+      // Processa o parâmetro forceLocale
+      const forceLocale = urlParams.get('forceLocale');
+      if (forceLocale) {
+        localStorage.setItem('forceLocale', forceLocale);
+        debugUtils.log(`Locale forçado via URL: ${forceLocale}`);
+        
+        // Remove o parâmetro da URL
+        urlParams.delete('forceLocale');
+        paramsChanged = true;
+      }
+      
+      // Processa o parâmetro debug
+      const debugMode = urlParams.get('debug');
+      if (debugMode === 'true' || debugMode === '1') {
+        debugUtils.enable();
+        
+        // Remove o parâmetro da URL
+        urlParams.delete('debug');
+        paramsChanged = true;
+      }
+      
+      // Se algum parâmetro foi processado e removido, atualiza a URL
+      if (paramsChanged) {
+        const newSearch = urlParams.toString() ? `?${urlParams.toString()}` : '';
+        const newUrl = window.location.pathname + newSearch + window.location.hash;
+        
+        // Atualiza a URL sem recarregar a página
+        window.history.replaceState({}, document.title, newUrl);
+      }
+    } catch (error) {
+      debugUtils.log(`Erro ao processar parâmetros da URL: ${error}`);
+    }
   }
 };
 

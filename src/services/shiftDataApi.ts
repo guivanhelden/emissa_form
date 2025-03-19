@@ -1,7 +1,13 @@
 import axios from 'axios';
 
+// Criar instância axios para a API que usará o proxy PHP
 const shiftDataApi = axios.create({
-  baseURL: import.meta.env.VITE_SHIFTDATA_API_URL || 'https://api.shiftgroup.com.br/api',
+  // Use o arquivo PHP como proxy para todas as requisições
+  baseURL: '/api-shiftdata-proxy.php?path=',
+  headers: {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json'
+  }
 });
 
 // Flag para debug
@@ -31,33 +37,40 @@ const tokenExpirado = () => {
   return resultado;
 };
 
-// Função para obter novo token
+// Função para obter novo token através do proxy PHP
 const obterNovoToken = async () => {
   DEBUG && console.log('Solicitando novo token...');
   
   try {
-    const response = await axios.post('https://api.shiftgroup.com.br/api/Login', {
-      accessKey: import.meta.env.VITE_SHIFTDATA_ACCESS_KEY
+    // Usando o endpoint PHP no mesmo servidor
+    const response = await fetch('/api-auth-shiftdata-token.php', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        accessKey: import.meta.env.VITE_SHIFTDATA_ACCESS_KEY
+      })
     });
     
-    if (response.data && response.data[0] && response.data[0].accessToken) {
-      const { accessToken, expiration } = response.data[0];
+    if (!response.ok) {
+      throw new Error(`Erro ao solicitar token: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    if (data && data.accessToken && data.expiration) {
+      localStorage.setItem('shiftDataToken', data.accessToken);
+      localStorage.setItem('shiftDataExpiracao', data.expiration);
       
-      localStorage.setItem('shiftDataToken', accessToken);
-      localStorage.setItem('shiftDataExpiracao', expiration);
+      DEBUG && console.log(`Novo token obtido! Válido até ${new Date(data.expiration).toLocaleString()}`);
       
-      DEBUG && console.log(`Novo token obtido! Válido até ${new Date(expiration).toLocaleString()}`);
-      
-      return accessToken;
+      return data.accessToken;
     }
     
     throw new Error('Resposta da API não contém token válido');
   } catch (error) {
-    if (axios.isAxiosError(error)) {
-      console.error('Erro ao obter token:', error.message, error.response?.data);
-    } else {
-      console.error('Erro ao obter token:', error);
-    }
+    console.error('Erro ao obter token:', error);
     throw error;
   }
 };

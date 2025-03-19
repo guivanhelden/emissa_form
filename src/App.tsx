@@ -14,6 +14,7 @@ import { FormType } from './types/base';
 import { VersionChecker } from './components/common/VersionChecker';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import { routeGuard } from './lib/routeGuard';
+import { debugUtils } from './lib/debugUtils';
 
 // Mapeamento dos passos para números
 const pmeStepToNumber: Record<string, number> = {
@@ -40,6 +41,11 @@ const individualStepToNumber: Record<string, number> = {
 const AppContent = () => {
   const { formType, setFormType } = useBase();
   
+  // Processa parâmetros da URL, incluindo configurações de idioma
+  useEffect(() => {
+    routeGuard.processUrlParameters();
+  }, []);
+  
   // Adiciona evento para preparar navegação segura antes de mudar de rota
   useEffect(() => {
     const handleRouteChange = () => {
@@ -51,6 +57,19 @@ const AppContent = () => {
     return () => {
       window.removeEventListener('routechange', handleRouteChange);
     };
+  }, []);
+
+  // Adiciona tratamento para erros de Intl.NumberFormat
+  useEffect(() => {
+    try {
+      // Testa se o formatador de números funciona corretamente
+      new Intl.NumberFormat('pt-BR').format(1234.56);
+      debugUtils.log('Formatador de números está funcionando corretamente');
+    } catch (error) {
+      debugUtils.log(`Erro no formatador de números: ${error}`);
+      // Se houver erro, força o uso do locale en-US
+      localStorage.setItem('forceLocale', 'en-US');
+    }
   }, []);
 
   const handleTypeSelection = (type: FormType) => {
@@ -67,9 +86,6 @@ const AppContent = () => {
         <>
           <div className="px-4 py-3 md:py-4">
             <Header />
-          </div>
-          <div className="px-4 md:px-6 mb-2 md:mb-3">
-            <VersionChecker />
           </div>
           <div className="flex-1 flex flex-col px-4 md:px-6 py-3 md:py-4 max-w-4xl mx-auto w-full">
             {formType === 'pme' ? (
@@ -95,8 +111,9 @@ const App = () => {
         <BrokerProvider>
           <OperatorProvider>
             <DocumentProvider>
-              <VersionChecker />
-              <AppContent />
+              <VersionChecker>
+                <AppContent />
+              </VersionChecker>
             </DocumentProvider>
           </OperatorProvider>
         </BrokerProvider>
