@@ -5,6 +5,7 @@ import { useOperator, useBroker, useDocument } from '../../../hooks/base';
 import { Edit2, FileText, User, Briefcase, Building, FileCheck, Clock, CreditCard, CheckCircle } from 'lucide-react';
 import { WebhookService } from '../../../services/webhook/webhookService';
 import { useBase } from '../../../hooks/base/useBase';
+import { savePMESubmission } from '../../../lib/supabase';
 
 export default function PMEReviewStep({ onBack, onSubmit: propOnSubmit }: BaseStepProps) {
   const { 
@@ -148,6 +149,29 @@ export default function PMEReviewStep({ onBack, onSubmit: propOnSubmit }: BaseSt
       };
 
       await WebhookService.submit(dataWithFallbacks, operators, [], observacoes);
+      
+      // Após envio bem-sucedido para o webhook, salvar os dados no Supabase PME
+      try {
+        // Preparar os dados para o formato esperado pela função savePMESubmission
+        const pmeSubmission = {
+          modality: modality || '',
+          operator_id: operator || 0,
+          plan_name: planName || '',
+          broker_id: brokerData.id, // Usar o ID do corretor
+          company: companyData,
+          contract: contractData,
+          grace_period: gracePeriodData,
+          holders: holders,
+          files: uploadedFiles
+        };
+        
+        console.log('Salvando dados no Supabase PME:', pmeSubmission);
+        await savePMESubmission(pmeSubmission);
+        console.log('Dados salvos com sucesso no Supabase PME');
+      } catch (supabaseError) {
+        console.error('Erro ao salvar dados no Supabase PME:', supabaseError);
+        // Não interromper o fluxo se falhar o salvamento no Supabase
+      }
       
       // Limpar todos os dados após envio bem-sucedido
       resetAllData();
@@ -371,7 +395,7 @@ export default function PMEReviewStep({ onBack, onSubmit: propOnSubmit }: BaseSt
           </div>
 
           <div className="mt-4 pt-4 border-t border-purple-400/30">
-            <h4 className="text-lg font-medium text-white mb-3 flex items-center">
+            <h4 className="text-lg font-medium text-white mb-3 flex items-center border-b border-purple-400/30 pb-2">
               <svg className="w-5 h-5 mr-2 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />

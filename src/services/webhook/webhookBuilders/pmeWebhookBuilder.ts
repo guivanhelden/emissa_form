@@ -148,6 +148,11 @@ export class PMEWebhookBuilder extends BaseWebhookBuilder {
   private buildBrokerParams(): void {
     const { brokerData } = this.data;
     
+    // Adicionar o ID do corretor aos parâmetros
+    if (brokerData.id) {
+      this.params.append('broker_id', String(brokerData.id));
+    }
+    
     this.params.append('broker_cpf', brokerData.document || '');
     this.params.append('broker_name', brokerData.name || '');
     this.params.append('broker_email', brokerData.email || '');

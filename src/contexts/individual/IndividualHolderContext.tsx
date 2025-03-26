@@ -117,7 +117,7 @@ export function IndividualHolderProvider({ children, initialData }: IndividualHo
         age--;
     }
     
-    return age >= 18 && age <= 100;
+    return age <= 100;
   };
 
   const validateField = (field: keyof IndividualHolderData, value: any): string | null => {
@@ -143,7 +143,7 @@ export function IndividualHolderProvider({ children, initialData }: IndividualHo
       case 'birthDate':
         const date = new Date(value);
         if (date >= new Date()) return 'Data de nascimento não pode ser futura';
-        if (!validateAge(value)) return 'Idade deve estar entre 18 e 100 anos';
+        if (!validateAge(value)) return 'Idade deve ser menor que 100 anos';
         return null;
       case 'rg':
         if (value.length < 5) return 'RG inválido';

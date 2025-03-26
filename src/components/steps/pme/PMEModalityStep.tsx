@@ -4,7 +4,7 @@ import { OperatorLogo } from '../../common/OperatorLogo';
 import { Operator } from '../../../types/base';
 import { supabase } from '../../../lib/supabase';
 import { usePMEForm } from '../../../contexts/pme/PMEContext';
-import { Heart, Stethoscope, Smile, Search, CheckCircle, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Heart, Stethoscope, Smile, Search, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, X } from 'lucide-react';
 
 interface PMEModalityStepProps {
   onBack: () => void;
@@ -32,6 +32,71 @@ export default function PMEModalityStep({
   const [searchTerm, setSearchTerm] = useState('');
   const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(null);
   const operatorsCache = useRef<Record<number, Operator[]>>({});
+  
+  // Referências para as seções do formulário
+  const modalityRef = useRef<HTMLDivElement>(null);
+  const operatorRef = useRef<HTMLDivElement>(null);
+  
+  // Estado para controlar erros de formulário
+  const [formErrors, setFormErrors] = useState({
+    modality: false,
+    operator: false
+  });
+  
+  // Estado para controlar o modal de erro
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  
+  // Estilo para animação de shake quando há erro
+  useEffect(() => {
+    // Adicionar estilo para animação de erro
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes error-shake {
+        0% { transform: translateX(0); }
+        10% { transform: translateX(-5px); }
+        20% { transform: translateX(5px); }
+        30% { transform: translateX(-5px); }
+        40% { transform: translateX(5px); }
+        50% { transform: translateX(-5px); }
+        60% { transform: translateX(5px); }
+        70% { transform: translateX(-5px); }
+        80% { transform: translateX(5px); }
+        90% { transform: translateX(-5px); }
+        100% { transform: translateX(0); }
+      }
+      
+      .error-shake {
+        animation: error-shake 0.6s ease-in-out;
+        border-color: rgb(239, 68, 68) !important;
+      }
+    `;
+    document.head.appendChild(style);
+    
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+  
+  // Função para mostrar mensagem de erro
+  const showErrorToast = (message: string, ref: React.RefObject<HTMLDivElement> | null) => {
+    // Mostrar a mensagem de erro
+    setErrorMessage(message);
+    setShowErrorModal(true);
+
+    // Rolar até o elemento com erro
+    if (ref && ref.current) {
+      console.log("Rolando até o elemento com erro");
+      ref.current.scrollIntoView({ behavior: 'smooth' });
+      // Adicionar uma classe para destacar visualmente o elemento com erro
+      ref.current.classList.add('error-shake');
+      setTimeout(() => {
+        if (ref && ref.current) {
+          ref.current.classList.remove('error-shake');
+        }
+      }, 1000);
+    }
+  };
 
   const fetchOperators = useCallback(async (page: number, search: string = '') => {
     if (operatorsCache.current[page] && !search) {
@@ -130,6 +195,76 @@ export default function PMEModalityStep({
     </div>
   );
 
+  // Componente para exibir o modal de erro
+  const ErrorModal = () => {
+    if (!showErrorModal) return null;
+    
+    return (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm transition-opacity">
+        <div className="bg-gray-900 border border-red-500 rounded-lg p-6 max-w-md w-full shadow-lg transform transition-all">
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex items-center">
+              <div className="bg-red-500 rounded-full p-2 mr-3">
+                <AlertCircle className="h-6 w-6 text-white" />
+              </div>
+              <h3 className="text-xl font-bold text-white">Campos obrigatórios</h3>
+            </div>
+            <button
+              onClick={() => setShowErrorModal(false)}
+              className="text-white/70 hover:text-white transition-colors"
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
+          <div className="mb-6">
+            <p className="text-white text-lg">{errorMessage}</p>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={() => setShowErrorModal(false)}
+              className="px-6 py-3 bg-gradient-to-r from-violet-600 to-purple-600 rounded-lg text-white font-bold transition-all hover:from-violet-700 hover:to-purple-700"
+            >
+              Entendi
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Adicionar função de validação e exibição de erros
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Verificar campos obrigatórios
+    const errors = {
+      modality: !modality,
+      operator: !operator || operator === 0
+    };
+    
+    setFormErrors(errors);
+    
+    // Se há algum erro, mostrar mensagem
+    if (errors.modality || errors.operator) {
+      let targetRef = null;
+      let message = '';
+      
+      if (errors.modality) {
+        message = 'Por favor, selecione uma modalidade de plano';
+        targetRef = modalityRef;
+      } else if (errors.operator) {
+        message = 'Por favor, selecione uma operadora';
+        targetRef = operatorRef;
+      }
+      
+      showErrorToast(message, targetRef);
+      return;
+    }
+    
+    // Se não há erros, prosseguir
+    onSubmit(e);
+  };
+
   return (
     <div className="w-full max-w-3xl mx-auto">
       <div className="bg-gradient-to-r from-purple-800/50 to-violet-800/50 p-6 rounded-xl mb-8 border border-purple-500/30 shadow-lg">
@@ -142,8 +277,15 @@ export default function PMEModalityStep({
         </p>
       </div>
 
-      <form onSubmit={onSubmit} className="space-y-8">
-        <div className="bg-white/10 rounded-lg p-6 space-y-6 border border-purple-400/30 shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20">
+      <form onSubmit={handleFormSubmit} className="space-y-8">
+        <div 
+          className={`bg-white/10 rounded-lg p-6 space-y-6 border shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20 ${
+            formErrors.modality 
+              ? 'border-red-500' 
+              : 'border-purple-400/30'
+          }`} 
+          ref={modalityRef}
+        >
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <Card
               title="Saúde"
@@ -151,7 +293,7 @@ export default function PMEModalityStep({
               selected={modality === 'saude'}
               onClick={() => {
                 setModality('saude');
-                setOperator(null);
+                setOperator(0);
                 setOperatorName('');
               }}
             >
@@ -163,7 +305,7 @@ export default function PMEModalityStep({
               selected={modality === 'saude_odonto'}
               onClick={() => {
                 setModality('saude_odonto');
-                setOperator(null);
+                setOperator(0);
                 setOperatorName('');
               }}
             >
@@ -175,7 +317,7 @@ export default function PMEModalityStep({
               selected={modality === 'odonto'}
               onClick={() => {
                 setModality('odonto');
-                setOperator(null);
+                setOperator(0);
                 setOperatorName('');
               }}
             >
@@ -185,7 +327,14 @@ export default function PMEModalityStep({
         </div>
 
         {modality && (
-          <div className="bg-white/10 rounded-lg p-6 space-y-6 border border-purple-400/30 shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20">
+          <div 
+            className={`bg-white/10 rounded-lg p-6 space-y-6 border shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20 ${
+              formErrors.operator 
+                ? 'border-red-500' 
+                : 'border-purple-400/30'
+            }`} 
+            ref={operatorRef}
+          >
             <h3 className="text-xl font-semibold text-white mb-4 flex items-center border-b border-purple-400/30 pb-3">
               <CheckCircle className="w-6 h-6 mr-3 text-purple-400" />
               Operadora
@@ -314,13 +463,14 @@ export default function PMEModalityStep({
           </button>
           <button
             type="submit"
-            disabled={!modality || !operator}
-            className="w-1/2 bg-gradient-to-r from-violet-600 via-purple-600 to-violet-600 py-4 px-6 border border-transparent shadow-lg text-base font-bold rounded-lg text-white hover:from-violet-700 hover:via-purple-700 hover:to-violet-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-1/2 bg-gradient-to-r from-violet-600 via-purple-600 to-violet-600 py-4 px-6 border border-transparent shadow-lg text-base font-bold rounded-lg text-white hover:from-violet-700 hover:via-purple-700 hover:to-violet-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition-all"
           >
             Continuar
           </button>
         </div>
       </form>
+
+      <ErrorModal />
     </div>
   );
 }

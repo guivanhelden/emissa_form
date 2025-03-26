@@ -14,14 +14,22 @@ export interface OperatorLogoProps {
   name: string;
   imageUrl?: string | null;
   selected?: boolean;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent) => void;
   small?: boolean;
+  children?: React.ReactNode;
 }
 
-export function OperatorLogo({ name, imageUrl, selected, onClick, small }: OperatorLogoProps) {
+export function OperatorLogo({ name, imageUrl, selected, onClick, small, children }: OperatorLogoProps) {
+  const handleClick = (e: React.MouseEvent) => {
+    if (onClick) {
+      e.preventDefault();
+      onClick(e);
+    }
+  };
+  
   return (
     <button
-      onClick={onClick}
+      onClick={handleClick}
       className={`
         relative ${small ? 'aspect-[5/2]' : 'aspect-[16/9]'}
         rounded-lg ${small ? 'p-1' : 'p-2'}
@@ -60,6 +68,8 @@ export function OperatorLogo({ name, imageUrl, selected, onClick, small }: Opera
       {selected && (
         <div className="absolute inset-0 bg-white/10 rounded-lg" />
       )}
+      
+      {children}
     </button>
   );
 }

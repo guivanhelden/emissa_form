@@ -44,24 +44,18 @@ export default function PMEBrokerStep({ onBack, onSubmit }: BaseStepProps) {
           formattedDocument = unformattedDoc.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
         }
         
-        console.log('Buscando dados para o documento:', formattedDocument);
-        
         const { data, error } = await supabase
           .from('vw_corretor_backup')
           .select('id, cpf_cnpj, nome, email, equipe_id, whatsapp, equipe_nome')
           .eq('cpf_cnpj', formattedDocument)
           .single();
 
-        console.log('Resposta do Supabase:', { data, error });
-
         if (error) {
-          console.error('Erro Supabase:', error);
           setError('Erro ao buscar dados do corretor. Tente novamente.');
           throw error;
         }
 
         if (data) {
-          console.log('Dados encontrados:', data);
           setSuccess(true);
           updateBrokerData('document', formattedDoc);
           updateBrokerData('name', data.nome || '');
@@ -73,7 +67,6 @@ export default function PMEBrokerStep({ onBack, onSubmit }: BaseStepProps) {
           setError('Nenhum corretor encontrado com este documento.');
         }
       } catch (err) {
-        console.error('Erro ao buscar dados do corretor:', err);
         setError('Erro ao buscar dados do corretor. Tente novamente.');
       } finally {
         setIsLoading(false);

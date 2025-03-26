@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, useRef, useEffect } from 'react';
 import { FormField } from '../../common/FormField';
 import { DataSelectionCard } from '../../common/DataSelectionCard';
 import { useIndividualHolder } from '../../../contexts/individual/IndividualHolderContext';
@@ -12,6 +12,7 @@ import {
   MaritalStatus
 } from '../../../types/individual';
 import axios from 'axios';
+import { AlertCircle, X } from 'lucide-react';
 
 // Constantes
 const SHIFTDATA_API_URL = import.meta.env.VITE_SHIFTDATA_API_URL || '/api-shiftgroup/api';
@@ -45,6 +46,66 @@ export function IndividualHolderStep({
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = React.useState<Record<string, string>>({});
+  
+  // Referências para seções do formulário
+  const dadosPessoaisRef = useRef<HTMLDivElement>(null);
+  const contatoRef = useRef<HTMLDivElement>(null);
+  const enderecoRef = useRef<HTMLDivElement>(null);
+
+  // Estado para controlar o modal de erro
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // Estilo para animação de shake quando há erro
+  useEffect(() => {
+    // Adicionar estilo para animação de erro
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes error-shake {
+        0% { transform: translateX(0); }
+        10% { transform: translateX(-5px); }
+        20% { transform: translateX(5px); }
+        30% { transform: translateX(-5px); }
+        40% { transform: translateX(5px); }
+        50% { transform: translateX(-5px); }
+        60% { transform: translateX(5px); }
+        70% { transform: translateX(-5px); }
+        80% { transform: translateX(5px); }
+        90% { transform: translateX(-5px); }
+        100% { transform: translateX(0); }
+      }
+      
+      .error-shake {
+        animation: error-shake 0.6s ease-in-out;
+        border-color: rgb(239, 68, 68) !important;
+      }
+    `;
+    document.head.appendChild(style);
+    
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+
+  // Função para mostrar mensagem de erro
+  const showErrorToast = (message: string, ref: React.RefObject<HTMLDivElement> | null) => {
+    // Mostrar a mensagem de erro
+    setErrorMessage(message);
+    setShowErrorModal(true);
+
+    // Rolar até o elemento com erro
+    if (ref && ref.current) {
+      console.log("Rolando até o elemento com erro");
+      ref.current.scrollIntoView({ behavior: 'smooth' });
+      // Adicionar uma classe para destacar visualmente o elemento com erro
+      ref.current.classList.add('error-shake');
+      setTimeout(() => {
+        if (ref && ref.current) {
+          ref.current.classList.remove('error-shake');
+        }
+      }, 1000);
+    }
+  };
 
   const formatCpf = (value: string) => {
     return value
@@ -62,12 +123,33 @@ export function IndividualHolderStep({
       .substring(0, 9);
   };
 
+  // Função para limpar erros quando um campo é preenchido
+  const clearFieldError = (field: string) => {
+    setFieldErrors(prev => {
+      const newErrors = { ...prev };
+      delete newErrors[field];
+      return newErrors;
+    });
+  };
+
+  // Função para verificar se um campo específico tem erro
+  const hasFieldError = (field: string): boolean => {
+    return !!fieldErrors[field];
+  };
+
+  // Atualiza o handleFieldChange para limpar erros quando um campo é preenchido
   const handleFieldChange = (field: keyof IndividualHolderData, value: any) => {
     const error = validateField(field, value);
     setFieldErrors(prev => ({
       ...prev,
       [field]: error || ''
     }));
+    
+    // Se o valor é válido, limpar o erro para este campo
+    if (value && !error) {
+      clearFieldError(field as string);
+    }
+    
     setHolderData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -511,8 +593,100 @@ export function IndividualHolderStep({
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-
-    console.log('=== Debug Submit ===');
+    console.log('=== Verificando campos obrigatórios ===');
+    
+    // Limpar erros anteriores
+    setFieldErrors({});
+    
+    // Flag para acompanhar se há erros
+    let hasErrors = false;
+    
+    // Verificar campos pessoais obrigatórios 
+    const personalFields = [
+      { key: 'cpf', label: 'CPF' },
+      { key: 'name', label: 'Nome completo' },
+      { key: 'birthDate', label: 'Data de nascimento' },
+      { key: 'motherName', label: 'Nome da mãe' },
+      { key: 'rg', label: 'RG' }
+    ];
+    
+    personalFields.forEach(({ key, label }) => {
+      if (!holderData[key as keyof typeof holderData]) {
+        setFieldErrors(prev => ({
+          ...prev,
+          [key]: `O campo ${label} é obrigatório`
+        }));
+        hasErrors = true;
+      }
+    });
+    
+    // Verificar campos de contato
+    const contactFields = [
+      { key: 'email', label: 'E-mail' },
+      { key: 'phone', label: 'Telefone' }
+    ];
+    
+    contactFields.forEach(({ key, label }) => {
+      if (!holderData[key as keyof typeof holderData]) {
+        setFieldErrors(prev => ({
+          ...prev,
+          [key]: `O campo ${label} é obrigatório`
+        }));
+        hasErrors = true;
+      }
+    });
+    
+    // Verificar campos de endereço
+    const selectedAddress = holderData.addresses.find(addr => addr.selected);
+    const addressFields = [
+      { key: 'cep', label: 'CEP' },
+      { key: 'street', label: 'Logradouro' },
+      { key: 'number', label: 'Número' },
+      { key: 'neighborhood', label: 'Bairro' },
+      { key: 'city', label: 'Cidade' },
+      { key: 'state', label: 'Estado' }
+    ];
+    
+    if (!selectedAddress || holderData.addresses.length === 0) {
+      addressFields.forEach(({ key, label }) => {
+        setFieldErrors(prev => ({
+          ...prev,
+          [key]: `O campo ${label} é obrigatório`
+        }));
+      });
+      hasErrors = true;
+    } else {
+      addressFields.forEach(({ key, label }) => {
+        if (!selectedAddress[key as keyof typeof selectedAddress]) {
+          setFieldErrors(prev => ({
+            ...prev,
+            [key]: `O campo ${label} é obrigatório`
+          }));
+          hasErrors = true;
+        }
+      });
+    }
+    
+    // Se há erros, exibir mensagem e parar o processamento
+    if (hasErrors) {
+      let targetRef = null;
+      let message = '';
+      
+      // Definir a seção para onde rolar e a mensagem a exibir
+      if (Object.keys(fieldErrors).some(key => ['cpf', 'name', 'birthDate', 'motherName', 'rg'].includes(key))) {
+        message = 'Preencha todos os dados pessoais obrigatórios';
+        targetRef = dadosPessoaisRef;
+      } else if (Object.keys(fieldErrors).some(key => ['email', 'phone'].includes(key))) {
+        message = 'Preencha todos os dados de contato obrigatórios';
+        targetRef = contatoRef;
+      } else {
+        message = 'Preencha todos os dados de endereço obrigatórios';
+        targetRef = enderecoRef;
+      }
+      
+      showErrorToast(message, targetRef);
+      return;
+    }
     
     // Formatar os dados para envio
     const formattedData: IndividualHolderData = {
@@ -532,15 +706,112 @@ export function IndividualHolderStep({
       console.log('2. Dados validados com sucesso');
       // Avançar para o próximo passo
       onSubmit();
+    } else {
+      // Se o handleHolderSubmit retornar falso, há erros que ele já deve ter tratado
+      console.log('Falha na validação do contexto');
     }
   };
 
-  // Cria estrutura de telefone ao preencher manualmente
+  // Modificar a função updateEmailManually para limpar erros
+  const updateEmailManually = (emailValue: string) => {
+    // Atualiza o valor do email no campo, independente da validação
+    handleFieldChange('email', emailValue);
+    
+    // Se for um valor válido, limpar o erro
+    if (emailValue && emailValue.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+      clearFieldError('email');
+    }
+    
+    // Identificador para o email manual
+    const manualEmailId = 'manual-email';
+    
+    // Verifica se é um email válido completo
+    const isValidEmail = emailValue && emailValue.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
+    
+    if (isValidEmail) {
+      // Se for válido, cria/atualiza o objeto de email
+      const existingManualEmailIndex = holderData.emails?.findIndex(e => e.id === manualEmailId);
+      
+      const emailObj: DatastoneEmail = {
+        id: manualEmailId,
+        address: emailValue,
+        type: 'PERSONAL' as 'PERSONAL',
+        selected: true
+      };
+      
+      // Atualiza o array de emails
+      let updatedEmails: DatastoneEmail[] = [];
+      
+      if (existingManualEmailIndex >= 0) {
+        // Se já existe um email manual, atualiza ele
+        updatedEmails = [...(holderData.emails || [])];
+        updatedEmails[existingManualEmailIndex] = {
+          ...updatedEmails[existingManualEmailIndex],
+          address: emailValue,
+          selected: true
+        };
+        
+        // Desmarca os outros emails
+        updatedEmails = updatedEmails.map(e => 
+          e.id !== manualEmailId ? {...e, selected: false} : e
+        );
+      } else {
+        // Se não existe, cria um novo e desmarca os existentes
+        updatedEmails = (holderData.emails || []).map(e => ({...e, selected: false}));
+        updatedEmails.push(emailObj);
+      }
+      
+      // Atualiza o estado
+      setHolderData(prev => ({
+        ...prev,
+        emails: updatedEmails
+      }));
+      
+      // Atualiza o contato
+      updateContact('email', emailObj, true);
+    } else {
+      // Se o email for inválido, procura e remove o email manual se existir
+      const existingManualEmailIndex = holderData.emails?.findIndex(e => e.id === manualEmailId);
+      
+      if (existingManualEmailIndex >= 0) {
+        // Cria uma cópia do array atual de emails
+        const updatedEmails = [...(holderData.emails || [])];
+        
+        // Remove o email manual
+        updatedEmails.splice(existingManualEmailIndex, 1);
+        
+        // Atualiza o estado sem o email manual
+        setHolderData(prev => ({
+          ...prev,
+          emails: updatedEmails
+        }));
+        
+        // Se não tinha nenhum email selecionado, limpa o contato principal
+        if (!updatedEmails.some(e => e.selected)) {
+          // Criamos um objeto vazio mas com as propriedades necessárias
+          const emptyEmail: DatastoneEmail = {
+            id: 'empty',
+            address: '',
+            type: 'PERSONAL',
+            selected: false
+          };
+          updateContact('email', emptyEmail, true);
+        }
+      }
+    }
+  };
+  
+  // Modificar a função updatePhoneManually para limpar erros
   const updatePhoneManually = (phoneValue: string) => {
     const formattedPhone = formatPhone(phoneValue);
     
     // Atualiza o valor formatado no campo de telefone
     handleFieldChange('phone', formattedPhone);
+    
+    // Se for um valor válido, limpar o erro
+    if (formattedPhone && formattedPhone.match(/^\(\d{2}\) \d{4,5}-\d{4}$/)) {
+      clearFieldError('phone');
+    }
     
     // Identificador para o telefone manual
     const manualPhoneId = 'manual-phone';
@@ -630,89 +901,42 @@ export function IndividualHolderStep({
       }
     }
   };
-  
-  // Cria estrutura de email ao preencher manualmente
-  const updateEmailManually = (emailValue: string) => {
-    // Atualiza o valor do email no campo, independente da validação
-    handleFieldChange('email', emailValue);
+
+  // Componente para exibir o modal de erro
+  const ErrorModal = () => {
+    if (!showErrorModal) return null;
     
-    // Identificador para o email manual
-    const manualEmailId = 'manual-email';
-    
-    // Verifica se é um email válido completo
-    const isValidEmail = emailValue && emailValue.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/);
-    
-    if (isValidEmail) {
-      // Se for válido, cria/atualiza o objeto de email
-      const existingManualEmailIndex = holderData.emails?.findIndex(e => e.id === manualEmailId);
-      
-      const emailObj: DatastoneEmail = {
-        id: manualEmailId,
-        address: emailValue,
-        type: 'PERSONAL' as 'PERSONAL',
-        selected: true
-      };
-      
-      // Atualiza o array de emails
-      let updatedEmails: DatastoneEmail[] = [];
-      
-      if (existingManualEmailIndex >= 0) {
-        // Se já existe um email manual, atualiza ele
-        updatedEmails = [...(holderData.emails || [])];
-        updatedEmails[existingManualEmailIndex] = {
-          ...updatedEmails[existingManualEmailIndex],
-          address: emailValue,
-          selected: true
-        };
-        
-        // Desmarca os outros emails
-        updatedEmails = updatedEmails.map(e => 
-          e.id !== manualEmailId ? {...e, selected: false} : e
-        );
-      } else {
-        // Se não existe, cria um novo e desmarca os existentes
-        updatedEmails = (holderData.emails || []).map(e => ({...e, selected: false}));
-        updatedEmails.push(emailObj);
-      }
-      
-      // Atualiza o estado
-      setHolderData(prev => ({
-        ...prev,
-        emails: updatedEmails
-      }));
-      
-      // Atualiza o contato
-      updateContact('email', emailObj, true);
-    } else {
-      // Se o email for inválido, procura e remove o email manual se existir
-      const existingManualEmailIndex = holderData.emails?.findIndex(e => e.id === manualEmailId);
-      
-      if (existingManualEmailIndex >= 0) {
-        // Cria uma cópia do array atual de emails
-        const updatedEmails = [...(holderData.emails || [])];
-        
-        // Remove o email manual
-        updatedEmails.splice(existingManualEmailIndex, 1);
-        
-        // Atualiza o estado sem o email manual
-        setHolderData(prev => ({
-          ...prev,
-          emails: updatedEmails
-        }));
-        
-        // Se não tinha nenhum email selecionado, limpa o contato principal
-        if (!updatedEmails.some(e => e.selected)) {
-          // Criamos um objeto vazio mas com as propriedades necessárias
-          const emptyEmail: DatastoneEmail = {
-            id: 'empty',
-            address: '',
-            type: 'PERSONAL',
-            selected: false
-          };
-          updateContact('email', emptyEmail, true);
-        }
-      }
-    }
+    return (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm transition-opacity">
+        <div className="bg-gray-900 border border-red-500 rounded-lg p-6 max-w-md w-full shadow-lg transform transition-all">
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex items-center">
+              <div className="bg-red-500 rounded-full p-2 mr-3">
+                <AlertCircle className="h-6 w-6 text-white" />
+              </div>
+              <h3 className="text-xl font-bold text-white">Campos obrigatórios</h3>
+            </div>
+            <button
+              onClick={() => setShowErrorModal(false)}
+              className="text-white/70 hover:text-white transition-colors"
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
+          <div className="mb-6">
+            <p className="text-white text-lg">{errorMessage}</p>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={() => setShowErrorModal(false)}
+              className="px-6 py-3 bg-gradient-to-r from-violet-600 to-purple-600 rounded-lg text-white font-bold transition-all hover:from-violet-700 hover:to-purple-700"
+            >
+              Entendi
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -755,7 +979,14 @@ export function IndividualHolderStep({
           {renderMultipleEmails()}
           {renderMultiplePhones()}
           
-          <div className="bg-white/10 rounded-lg p-6 space-y-6 border border-purple-400/30 shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20">
+          <div 
+            ref={dadosPessoaisRef}
+            className={`bg-white/10 rounded-lg p-6 space-y-6 border ${
+              Object.keys(fieldErrors).some(key => ['cpf', 'name', 'birthDate', 'motherName', 'rg'].includes(key)) 
+                ? 'border-red-500 shadow-red-500/30' 
+                : 'border-purple-400/30'
+            } shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20`}
+          >
             <h3 className="text-xl font-semibold text-white mb-4">Dados Pessoais</h3>
             
             <FormField 
@@ -770,13 +1001,19 @@ export function IndividualHolderStep({
                 className={`w-full px-6 py-4 bg-white/10 border rounded-lg
                          text-white placeholder:text-white/60 focus:outline-none
                          transition-colors ${
-                           fieldErrors['cpf'] 
+                           hasFieldError('cpf') 
                              ? 'border-red-500 focus:border-red-400' 
                              : 'border-purple-500 focus:border-white/40'
                          }`}
                 required
                 disabled={isLoading}
               />
+              {fieldErrors['cpf'] && (
+                <p className="text-red-500 text-sm mt-1 flex items-center">
+                  <AlertCircle className="w-4 h-4 mr-1" />
+                  {fieldErrors['cpf']}
+                </p>
+              )}
             </FormField>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -792,13 +1029,19 @@ export function IndividualHolderStep({
                   className={`w-full px-6 py-4 bg-white/10 border rounded-lg
                            text-white placeholder:text-white/60 focus:outline-none
                            transition-colors ${
-                             fieldErrors['name'] 
+                             hasFieldError('name') 
                                ? 'border-red-500 focus:border-red-400' 
                                : 'border-purple-500 focus:border-white/40'
                            }`}
                   required
                   disabled={isLoading}
                 />
+                {fieldErrors['name'] && (
+                  <p className="text-red-500 text-sm mt-1 flex items-center">
+                    <AlertCircle className="w-4 h-4 mr-1" />
+                    {fieldErrors['name']}
+                  </p>
+                )}
               </FormField>
 
               <FormField label="Data de Nascimento">
@@ -810,7 +1053,6 @@ export function IndividualHolderStep({
                            text-white focus:outline-none focus:border-white/40 transition-colors"
                   required
                   disabled={isLoading}
-                  max={new Date(new Date().setFullYear(new Date().getFullYear() - 18)).toISOString().split('T')[0]}
                 />
               </FormField>
             </div>
@@ -846,36 +1088,69 @@ export function IndividualHolderStep({
             </div>
           </div>
 
-          <div className="bg-white/10 rounded-lg p-6 space-y-6 border border-purple-400/30 shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20">
+          <div 
+            ref={contatoRef}
+            className={`bg-white/10 rounded-lg p-6 space-y-6 border ${
+              Object.keys(fieldErrors).some(key => ['email', 'phone'].includes(key)) 
+                ? 'border-red-500 shadow-red-500/30' 
+                : 'border-purple-400/30'
+            } shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20`}
+          >
             <h3 className="text-xl font-semibold text-white mb-4">Contato</h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField label="E-mail">
+              <FormField 
+                label="E-mail"
+                error={fieldErrors['email']}
+              >
                 <input
                   type="email"
                   value={holderData.email}
                   onChange={(e) => updateEmailManually(e.target.value)}
                   placeholder="email@exemplo.com"
-                  className="w-full px-6 py-4 bg-white/10 border border-purple-500 rounded-lg
-                           text-white placeholder:text-white/60 focus:outline-none focus:border-white/40
-                           transition-colors"
+                  className={`w-full px-6 py-4 bg-white/10 border rounded-lg
+                           text-white placeholder:text-white/60 focus:outline-none
+                           transition-colors ${
+                             hasFieldError('email') 
+                               ? 'border-red-500 focus:border-red-400' 
+                               : 'border-purple-500 focus:border-white/40'
+                           }`}
                   required
                   disabled={isLoading}
                 />
+                {fieldErrors['email'] && (
+                  <p className="text-red-500 text-sm mt-1 flex items-center">
+                    <AlertCircle className="w-4 h-4 mr-1" />
+                    {fieldErrors['email']}
+                  </p>
+                )}
               </FormField>
 
-              <FormField label="Telefone">
+              <FormField 
+                label="Telefone"
+                error={fieldErrors['phone']}
+              >
                 <input
                   type="text"
                   value={holderData.phone}
                   onChange={(e) => updatePhoneManually(e.target.value)}
                   placeholder="(00) 00000-0000"
-                  className="w-full px-6 py-4 bg-white/10 border border-purple-500 rounded-lg
-                           text-white placeholder:text-white/60 focus:outline-none focus:border-white/40
-                           transition-colors"
+                  className={`w-full px-6 py-4 bg-white/10 border rounded-lg
+                           text-white placeholder:text-white/60 focus:outline-none
+                           transition-colors ${
+                             hasFieldError('phone') 
+                               ? 'border-red-500 focus:border-red-400' 
+                               : 'border-purple-500 focus:border-white/40'
+                           }`}
                   required
                   disabled={isLoading}
                 />
+                {fieldErrors['phone'] && (
+                  <p className="text-red-500 text-sm mt-1 flex items-center">
+                    <AlertCircle className="w-4 h-4 mr-1" />
+                    {fieldErrors['phone']}
+                  </p>
+                )}
               </FormField>
             </div>
 
@@ -944,7 +1219,14 @@ export function IndividualHolderStep({
           </div>
 
           {/* Campos de Endereço */}
-          <div className="bg-white/10 rounded-lg p-6 space-y-6 border border-purple-400/30 shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20">
+          <div 
+            ref={enderecoRef}
+            className={`bg-white/10 rounded-lg p-6 space-y-6 border ${
+              Object.keys(fieldErrors).some(key => ['cep', 'street', 'number', 'neighborhood', 'city', 'state'].includes(key)) 
+                ? 'border-red-500 shadow-red-500/30' 
+                : 'border-purple-400/30'
+            } shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20`}
+          >
             <h3 className="text-xl font-semibold text-white mb-4">Endereço</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <FormField 
@@ -1159,6 +1441,8 @@ export function IndividualHolderStep({
           </button>
         </div>
       </form>
+
+      <ErrorModal />
     </div>
   );
 }

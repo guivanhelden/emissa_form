@@ -32,8 +32,15 @@ export function VersionChecker({ children }: VersionCheckerProps = {}) {
             });
             
             if (response.ok) {
-              fetchSuccess = true;
-              break;
+              // Verificar o tipo de conteúdo antes de tentar fazer o parse como JSON
+              const contentType = response.headers.get('content-type');
+              if (contentType && contentType.includes('application/json')) {
+                fetchSuccess = true;
+                break;
+              } else {
+                console.log(`Resposta não é JSON para ${url}: ${contentType}`);
+                continue;
+              }
             }
           } catch (err) {
             console.log(`Falha ao buscar ${url}:`, err);
@@ -41,29 +48,33 @@ export function VersionChecker({ children }: VersionCheckerProps = {}) {
         }
         
         if (fetchSuccess && response) {
-          const data = await response.json();
-          if (data.version) {
-            setCurrentAppVersion(data.version);
-            
-            // Verifica a versão armazenada no localStorage
-            const storedVersion = localStorage.getItem('app_version');
-            
-            // Se não houver versão armazenada ou for diferente da atual, atualiza
-            if (!storedVersion) {
-              localStorage.setItem('app_version', data.version);
-            } else if (storedVersion !== data.version) {
-              // Limpa o cache do navegador
-              if ('caches' in window) {
-                caches.keys().then(cacheNames => {
-                  cacheNames.forEach(cacheName => {
-                    caches.delete(cacheName);
-                  });
-                });
-              }
+          try {
+            const data = await response.json();
+            if (data.version) {
+              setCurrentAppVersion(data.version);
               
-              // Indica que a página precisa ser atualizada
-              setNeedsRefresh(true);
+              // Verifica a versão armazenada no localStorage
+              const storedVersion = localStorage.getItem('app_version');
+              
+              // Se não houver versão armazenada ou for diferente da atual, atualiza
+              if (!storedVersion) {
+                localStorage.setItem('app_version', data.version);
+              } else if (storedVersion !== data.version) {
+                // Limpa o cache do navegador
+                if ('caches' in window) {
+                  caches.keys().then(cacheNames => {
+                    cacheNames.forEach(cacheName => {
+                      caches.delete(cacheName);
+                    });
+                  });
+                }
+                
+                // Indica que a página precisa ser atualizada
+                setNeedsRefresh(true);
+              }
             }
+          } catch (error) {
+            console.error('Erro ao verificar versão:', error);
           }
         }
       } catch (error) {

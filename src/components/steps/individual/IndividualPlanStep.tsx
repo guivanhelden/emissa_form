@@ -5,7 +5,7 @@ import { OperatorLogo } from '../../common/OperatorLogo';
 import { IndividualPlanData, Administrator } from '../../../types/individual';
 import { Operator } from '../../../types/base';
 import { supabase } from '../../../lib/supabase';
-import { Heart, Stethoscope, Smile, Search, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Building, Bed, GraduationCap, DollarSign, Percent, Ban } from 'lucide-react';
+import { Heart, Stethoscope, Smile, Search, CheckCircle, AlertCircle, ChevronLeft, ChevronRight, Building, Bed, GraduationCap, DollarSign, Percent, Ban, X } from 'lucide-react';
 import { MaskedInput, masks } from '../../common/Input';
 
 interface IndividualPlanStepProps {
@@ -37,6 +37,44 @@ export function IndividualPlanStep({
   const [operatorsPerPage] = useState(20);
   const [searchTimeout, setSearchTimeout] = useState<NodeJS.Timeout | null>(null);
   const operatorsCache = useRef<Record<number, Operator[]>>({});
+
+  // Referências para elementos do formulário
+  const tipoPlanoRef = useRef<HTMLDivElement>(null);
+  const modalidadeRef = useRef<HTMLDivElement>(null);
+  const administradoraRef = useRef<HTMLDivElement>(null);
+  const operadoraRef = useRef<HTMLDivElement>(null);
+  const infoPlanoRef = useRef<HTMLDivElement>(null);
+  const acomodacaoRef = useRef<HTMLDivElement>(null);
+  const dadosPlanoRef = useRef<HTMLDivElement>(null);
+  
+  // Estado para mensagens de erro de validação
+  const [formErrors, setFormErrors] = useState<{
+    type: boolean;
+    modality: boolean;
+    administrator: boolean;
+    association: boolean;
+    operator: boolean;
+    nomePlano: boolean;
+    vigencia: boolean;
+    accommodation: boolean;
+    coparticipation: boolean;
+    value: boolean;
+  }>({
+    type: false,
+    modality: false,
+    administrator: false,
+    association: false,
+    operator: false,
+    nomePlano: false,
+    vigencia: false,
+    accommodation: false,
+    coparticipation: false,
+    value: false
+  });
+  
+  // Estado para controlar a exibição do modal de erro
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const fetchOperators = useCallback(async (page: number, search: string = '') => {
     if (operatorsCache.current[page] && !search) {
@@ -87,7 +125,7 @@ export function IndividualPlanStep({
   // Efeito para sincronizar os estados locais com o contexto global
   useEffect(() => {
     if (planData.value) {
-      setValorPlano(String(planData.value));
+      setValorPlano(formatValue(planData.value));
     }
     
     if (planData.coparticipation) {
@@ -147,6 +185,12 @@ export function IndividualPlanStep({
       operator: Number(operator.id),
       operatorName: operator.nome
     }));
+    
+    // Limpar erro ao selecionar operadora
+    setFormErrors(prev => ({
+      ...prev,
+      operator: false
+    }));
   };
 
   const getPageCount = () => {
@@ -173,61 +217,133 @@ export function IndividualPlanStep({
     }
   };
 
-  // Inicializar estados com valores do contexto
-  const [coparticipacao, setCoparticipacao] = useState<'completa' | 'parcial' | 'nao' | ''>(planData.coparticipation ? String(planData.coparticipation) as any : '');
-  const [valorPlano, setValorPlano] = useState<string>(planData.value ? String(planData.value) : '');
-
   // Função para formatar valor em Real
-  const formatarValor = (valor: string) => {
-    // Remove tudo que não for dígito
-    valor = valor.replace(/\D/g, '');
-    
-    // Converte para número e divide por 100 para obter o valor em reais
-    const valorNumerico = Number(valor) / 100;
-    
-    // Formata o valor para o padrão brasileiro
+  const formatValue = (valor: number): string => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL',
       minimumFractionDigits: 2
-    }).format(valorNumerico);
+    }).format(valor);
   };
 
-  const handleValorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let valor = e.target.value.replace(/\D/g, '');
-    const valorFormatado = formatarValor(valor);
-    setValorPlano(valorFormatado);
+  // Inicializar estados com valores do contexto
+  const [coparticipacao, setCoparticipacao] = useState<'completa' | 'parcial' | 'nao' | ''>(planData.coparticipation ? String(planData.coparticipation) as any : '');
+  const [valorPlano, setValorPlano] = useState<string>(planData.value ? formatValue(planData.value) : '');
+
+  const handleValueChange = (value: string) => {
+    // Atualiza o estado local com o valor formatado
+    setValorPlano(value);
     
-    // Atualizar o contexto imediatamente - converter string para number
-    const valorNumerico = Number(valor) / 100;
+    // Remove tudo que não for dígito para calcular o valor numérico
+    const numericValue = Number(value.replace(/\D/g, '')) / 100;
+    
+    // Atualiza o contexto com o valor numérico
     onPlanDataChange(prev => ({
       ...prev,
-      value: valorNumerico
+      value: numericValue
     }));
+    
+    // Limpar erro
+    if (value && value !== 'R$ 0,00') {
+      setFormErrors(prev => ({
+        ...prev,
+        value: false
+      }));
+    }
+  };
+
+  // Função para mostrar mensagem de erro no modal
+  const showErrorToast = (message: string, ref: React.RefObject<HTMLDivElement> | null) => {
+    // Mostrar a mensagem de erro
+    setErrorMessage(message);
+    setShowErrorModal(true);
+
+    // Rolar até o elemento com erro
+    if (ref && ref.current) {
+      console.log("Rolando até o elemento com erro");
+      ref.current.scrollIntoView({ behavior: 'smooth' });
+      // Adicionar uma classe para destacar visualmente o elemento com erro
+      ref.current.classList.add('error-shake');
+      setTimeout(() => {
+        if (ref && ref.current) {
+          ref.current.classList.remove('error-shake');
+        }
+      }, 1000);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log("Formulário submetido!");
+
+    // Redefinir todos os erros
+    const newErrors = {
+      type: !planData.type,
+      modality: !planData.modality,
+      administrator: planData.type === 'adhesion' && !planData.administrator,
+      association: planData.type === 'adhesion' && !planData.association,
+      operator: !planData.operator,
+      nomePlano: !planData.nomePlano,
+      vigencia: !planData.vigencia,
+      accommodation: !planData.accommodation,
+      coparticipation: !coparticipacao,
+      value: !valorPlano || valorPlano === 'R$ 0,00'
+    };
+
+    console.log("Erros de validação:", newErrors);
+    setFormErrors(newErrors);
+
+    // Verificar se há algum erro
+    const hasError = Object.values(newErrors).some(error => error === true);
+    console.log("Tem erro:", hasError);
+
+    if (hasError) {
+      // Determinar a mensagem de erro e qual elemento deve receber o foco
+      let targetRef = null;
+      let message = '';
+
+      if (newErrors.type) {
+        message = 'Selecione o tipo do plano';
+        targetRef = tipoPlanoRef;
+      } else if (newErrors.modality) {
+        message = 'Selecione a modalidade de contratação';
+        targetRef = modalidadeRef;
+      } else if (newErrors.administrator || newErrors.association) {
+        message = 'Preencha os dados da administradora e associação';
+        targetRef = administradoraRef;
+      } else if (newErrors.operator) {
+        message = 'Selecione uma operadora';
+        targetRef = operadoraRef;
+      } else if (newErrors.nomePlano || newErrors.vigencia) {
+        message = 'Preencha todas as informações do plano';
+        targetRef = infoPlanoRef;
+      } else if (newErrors.accommodation) {
+        message = 'Selecione o tipo de acomodação';
+        targetRef = acomodacaoRef;
+      } else if (newErrors.value || newErrors.coparticipation) {
+        message = 'Preencha todos os dados do plano';
+        targetRef = dadosPlanoRef;
+      }
+
+      console.log("Mensagem de erro:", message);
+      showErrorToast(message, targetRef);
+      return;
+    }
 
     try {
       // Os dados já foram atualizados nos handlers de cada campo
       // Apenas garantindo que estão sincronizados antes de avançar
       
-      // Extrai o valor numérico do formato brasileiro (R$ X.XXX,XX)
-      // Remove R$, pontos e substitui vírgula por ponto para converter para número
-      const valorLimpo = valorPlano.replace(/[R$\s.]/g, '').replace(',', '.');
-      const valorNumerico = parseFloat(valorLimpo) || 0;
-      
       onPlanDataChange(prev => ({
         ...prev,
         coparticipation: coparticipacao,
-        value: valorNumerico,
       }));
 
       // Avançar para próxima etapa
       onSubmit(e);
     } catch (error) {
       console.error('Erro ao salvar dados do plano:', error);
+      alert('Ocorreu um erro ao salvar os dados. Por favor, tente novamente.');
     }
   };
 
@@ -237,6 +353,215 @@ export function IndividualPlanStep({
     </div>
   );
   
+  // Componente para exibir o modal de erro
+  const ErrorModal = () => {
+    if (!showErrorModal) return null;
+    
+    return (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm transition-opacity">
+        <div className="bg-gray-900 border border-red-500 rounded-lg p-6 max-w-md w-full shadow-lg transform transition-all">
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex items-center">
+              <div className="bg-red-500 rounded-full p-2 mr-3">
+                <AlertCircle className="h-6 w-6 text-white" />
+              </div>
+              <h3 className="text-xl font-bold text-white">Campos obrigatórios</h3>
+            </div>
+            <button
+              onClick={() => setShowErrorModal(false)}
+              className="text-white/70 hover:text-white transition-colors"
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
+          <div className="mb-6">
+            <p className="text-white text-lg">{errorMessage}</p>
+          </div>
+          <div className="flex justify-end">
+            <button
+              onClick={() => setShowErrorModal(false)}
+              className="px-6 py-3 bg-gradient-to-r from-violet-600 to-purple-600 rounded-lg text-white font-bold transition-all hover:from-violet-700 hover:to-purple-700"
+            >
+              Entendi
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Estilo para animação de shake quando há erro
+  useEffect(() => {
+    // Adicionar estilo para animação de erro
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes error-shake {
+        0% { transform: translateX(0); }
+        10% { transform: translateX(-5px); }
+        20% { transform: translateX(5px); }
+        30% { transform: translateX(-5px); }
+        40% { transform: translateX(5px); }
+        50% { transform: translateX(-5px); }
+        60% { transform: translateX(5px); }
+        70% { transform: translateX(-5px); }
+        80% { transform: translateX(5px); }
+        90% { transform: translateX(-5px); }
+        100% { transform: translateX(0); }
+      }
+      
+      .error-shake {
+        animation: error-shake 0.6s ease-in-out;
+        border-color: rgb(239, 68, 68) !important;
+      }
+    `;
+    document.head.appendChild(style);
+    
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+
+  // Para o tipo do plano
+  const handleTypeChange = (type: 'individual' | 'adhesion') => {
+    onPlanDataChange(prev => ({ 
+      ...prev, 
+      type,
+      ...(type === 'individual' ? { administrator: '', association: '' } : {})
+    }));
+    
+    // Limpar erro ao selecionar tipo
+    setFormErrors(prev => ({
+      ...prev,
+      type: false
+    }));
+  };
+
+  // Para a modalidade 
+  const handleModalityChange = (modality: 'health' | 'dental' | 'both') => {
+    onPlanDataChange(prev => ({ 
+      ...prev, 
+      modality
+    }));
+    
+    // Limpar erro ao selecionar modalidade
+    setFormErrors(prev => ({
+      ...prev,
+      modality: false
+    }));
+  };
+
+  // Para acomodação
+  const handleAccommodationChange = (accommodation: 'private' | 'shared') => {
+    onPlanDataChange(prev => ({ 
+      ...prev, 
+      accommodation
+    }));
+    
+    // Limpar erro ao selecionar acomodação
+    setFormErrors(prev => ({
+      ...prev,
+      accommodation: false
+    }));
+  };
+
+  // Para coparticipação
+  const handleCopartChange = (value: 'completa' | 'parcial' | 'nao') => {
+    setCoparticipacao(value);
+    onPlanDataChange(prev => ({ 
+      ...prev, 
+      coparticipation: value
+    }));
+    
+    // Limpar erro ao selecionar coparticipação
+    setFormErrors(prev => ({
+      ...prev,
+      coparticipation: false
+    }));
+  };
+
+  // Funções para lidar com os campos de administradora e associação
+  const handleAdministratorChange = (value: string | number | Administrator) => {
+    if (value === '') {
+      onPlanDataChange(prev => ({
+        ...prev,
+        administrator: ''
+      }));
+    } else {
+      const selectedAdminId = typeof value === 'string' ? Number(value) : value;
+      
+      // Buscar o objeto completo da administradora selecionada
+      if (typeof selectedAdminId === 'number') {
+        const selectedAdmin = administrators.find(admin => admin.administradora_id === selectedAdminId);
+        if (selectedAdmin) {
+          onPlanDataChange(prev => ({
+            ...prev,
+            administrator: selectedAdmin
+          }));
+        } else {
+          onPlanDataChange(prev => ({
+            ...prev,
+            administrator: selectedAdminId
+          }));
+        }
+      } else {
+        onPlanDataChange(prev => ({
+          ...prev,
+          administrator: selectedAdminId
+        }));
+      }
+    }
+    
+    // Limpar erro
+    setFormErrors(prev => ({
+      ...prev,
+      administrator: false
+    }));
+  };
+
+  const handleAssociationChange = (value: string) => {
+    onPlanDataChange(prev => ({ 
+      ...prev, 
+      association: value 
+    }));
+    
+    // Limpar erro
+    if (value) {
+      setFormErrors(prev => ({
+        ...prev,
+        association: false
+      }));
+    }
+  };
+
+  const handlePlanNameChange = (value: string) => {
+    onPlanDataChange(prev => ({ 
+      ...prev, 
+      nomePlano: value 
+    }));
+    
+    // Limpar erro
+    if (value) {
+      setFormErrors(prev => ({
+        ...prev,
+        nomePlano: false
+      }));
+    }
+  };
+
+  const handleVigenciaChange = (value: string) => {
+    onPlanDataChange(prev => ({ 
+      ...prev, 
+      vigencia: value 
+    }));
+    
+    // Limpar erro
+    if (value) {
+      setFormErrors(prev => ({
+        ...prev,
+        vigencia: false
+      }));
+    }
+  };
 
   return (
     <div className="w-full max-w-3xl mx-auto">
@@ -251,21 +576,21 @@ export function IndividualPlanStep({
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8">
-        <div className="bg-white/10 rounded-lg p-6 space-y-6 border border-purple-400/30 shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20">
+        <div 
+          ref={tipoPlanoRef}
+          className={`bg-white/10 rounded-lg p-6 space-y-6 border ${formErrors.type ? 'border-red-500 shadow-red-500/30' : 'border-purple-400/30'} shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20`}
+        >
           <h3 className="text-xl font-semibold text-white mb-4 flex items-center border-b border-purple-400/30 pb-3">
             <CheckCircle className="w-6 h-6 mr-3 text-purple-400" />
             Tipo do Plano
+            {formErrors.type && <AlertCircle className="w-5 h-5 ml-2 text-red-500" />}
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
             <Card
               title="Individual/Familiar"
               icon={<Building size={32} className="text-purple-400" />}
               selected={planData.type === 'individual'}
-              onClick={() => onPlanDataChange(prev => ({ 
-                ...prev, 
-                type: 'individual',
-                ...(planData.type === 'individual' ? { administrator: '', association: '' } : {})
-              }))}
+              onClick={() => handleTypeChange('individual')}
             >
               {planData.type === 'individual' && <CheckIcon />}
             </Card>
@@ -273,31 +598,34 @@ export function IndividualPlanStep({
               title="Adesão"
               icon={<GraduationCap size={32} className="text-purple-400" />}
               selected={planData.type === 'adhesion'}
-              onClick={() => onPlanDataChange(prev => ({ 
-                ...prev, 
-                type: 'adhesion',
-                ...(planData.type === 'adhesion' ? { administrator: '', association: '' } : {})
-              }))}
+              onClick={() => handleTypeChange('adhesion')}
             >
               {planData.type === 'adhesion' && <CheckIcon />}
             </Card>
           </div>
+          {formErrors.type && (
+            <p className="text-red-500 text-sm flex items-center">
+              <AlertCircle className="w-4 h-4 mr-1" />
+              Selecione um tipo de plano
+            </p>
+          )}
         </div>
 
-        <div className="bg-white/10 rounded-lg p-6 space-y-6 border border-purple-400/30 shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20">
+        <div 
+          ref={modalidadeRef}
+          className={`bg-white/10 rounded-lg p-6 space-y-6 border ${formErrors.modality ? 'border-red-500 shadow-red-500/30' : 'border-purple-400/30'} shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20`}
+        >
           <h3 className="text-xl font-semibold text-white mb-4 flex items-center border-b border-purple-400/30 pb-3">
             <CheckCircle className="w-6 h-6 mr-3 text-purple-400" />
             Modalidade de Contratação
+            {formErrors.modality && <AlertCircle className="w-5 h-5 ml-2 text-red-500" />}
           </h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
             <Card
               title="Saúde"
               icon={<Heart size={32} className="text-purple-400" />}
               selected={planData.modality === 'health'}
-              onClick={() => onPlanDataChange(prev => ({ 
-                ...prev, 
-                modality: 'health'
-              }))}
+              onClick={() => handleModalityChange('health')}
             >
               {planData.modality === 'health' && <CheckIcon />}
             </Card>
@@ -305,10 +633,7 @@ export function IndividualPlanStep({
               title="Odonto"
               icon={<Smile size={32} className="text-purple-400" />}
               selected={planData.modality === 'dental'}
-              onClick={() => onPlanDataChange(prev => ({ 
-                ...prev, 
-                modality: 'dental'
-              }))}
+              onClick={() => handleModalityChange('dental')}
             >
               {planData.modality === 'dental' && <CheckIcon />}
             </Card>
@@ -316,18 +641,24 @@ export function IndividualPlanStep({
               title="Saúde + Odonto"
               icon={<div className="flex gap-2"><Heart size={32} className="text-purple-400" /><Smile size={32} className="text-purple-400" /></div>}
               selected={planData.modality === 'both'}
-              onClick={() => onPlanDataChange(prev => ({ 
-                ...prev, 
-                modality: 'both'
-              }))}
+              onClick={() => handleModalityChange('both')}
             >
               {planData.modality === 'both' && <CheckIcon />}
             </Card>
           </div>
+          {formErrors.modality && (
+            <p className="text-red-500 text-sm flex items-center">
+              <AlertCircle className="w-4 h-4 mr-1" />
+              Selecione uma modalidade de contratação
+            </p>
+          )}
         </div>
 
         {planData.type === 'adhesion' && (
-          <div className="bg-white/10 rounded-lg p-6 space-y-6 border border-purple-400/30 shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20">
+          <div 
+            ref={administradoraRef}
+            className={`bg-white/10 rounded-lg p-6 space-y-6 border ${(formErrors.administrator || formErrors.association) ? 'border-red-500 shadow-red-500/30' : 'border-purple-400/30'} shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20`}
+          >
             <h3 className="text-xl font-semibold text-white mb-4 flex items-center border-b border-purple-400/30 pb-3">
               <CheckCircle className="w-6 h-6 mr-3 text-purple-400" />
               Administradora e Associação
@@ -341,31 +672,11 @@ export function IndividualPlanStep({
                     id="administrator"
                     value={typeof planData.administrator === 'object' ? planData.administrator.administradora_id : planData.administrator}
                     onChange={(e) => {
-                      const selectedAdminId = e.target.value ? Number(e.target.value) : '';
-                      if (selectedAdminId === '') {
-                        onPlanDataChange(prev => ({
-                          ...prev,
-                          administrator: ''
-                        }));
-                      } else {
-                        // Buscar o objeto completo da administradora selecionada
-                        const selectedAdmin = administrators.find(admin => admin.administradora_id === Number(selectedAdminId));
-                        if (selectedAdmin) {
-                          onPlanDataChange(prev => ({
-                            ...prev,
-                            administrator: selectedAdmin
-                          }));
-                        } else {
-                          onPlanDataChange(prev => ({
-                            ...prev,
-                            administrator: selectedAdminId
-                          }));
-                        }
-                      }
+                      handleAdministratorChange(e.target.value);
                     }}
-                    className="w-full px-6 py-4 bg-white/10 border border-purple-500/50 rounded-lg
+                    className={`w-full px-6 py-4 bg-white/10 border ${formErrors.administrator ? 'border-red-500' : 'border-purple-500/50'} rounded-lg
                              text-white focus:outline-none focus:border-white/40 transition-colors
-                             [&>option]:bg-gray-900 [&>option]:text-white"
+                             [&>option]:bg-gray-900 [&>option]:text-white`}
                     required
                   >
                     <option value="">Selecione uma administradora</option>
@@ -383,20 +694,29 @@ export function IndividualPlanStep({
                   <input
                     type="text"
                     value={planData.association}
-                    onChange={(e) => onPlanDataChange(prev => ({ ...prev, association: e.target.value }))}
+                    onChange={(e) => handleAssociationChange(e.target.value)}
                     placeholder="Nome da associação"
-                    className="w-full px-6 py-4 bg-white/10 border border-purple-500/50 rounded-lg
+                    className={`w-full px-6 py-4 bg-white/10 border ${formErrors.association ? 'border-red-500' : 'border-purple-500/50'} rounded-lg
                            text-white placeholder:text-white/60 focus:outline-none focus:border-white/40
-                           transition-colors"
+                           transition-colors`}
                     required
                   />
                 </div>
               </FormField>
             </div>
+            {(formErrors.administrator || formErrors.association) && (
+              <p className="text-red-500 text-sm flex items-center mt-2">
+                <AlertCircle className="w-4 h-4 mr-1" />
+                Preencha os dados da administradora e associação
+              </p>
+            )}
           </div>
         )}
 
-        <div className="bg-white/10 rounded-lg p-6 space-y-6 border border-purple-400/30 shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20">
+        <div 
+          ref={operadoraRef}
+          className={`bg-white/10 rounded-lg p-6 space-y-6 border ${formErrors.operator ? 'border-red-500 shadow-red-500/30' : 'border-purple-400/30'} shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20`}
+        >
           <h3 className="text-xl font-semibold text-white mb-4 flex items-center border-b border-purple-400/30 pb-3">
             <CheckCircle className="w-6 h-6 mr-3 text-purple-400" />
             Operadora
@@ -512,9 +832,18 @@ export function IndividualPlanStep({
               </div>
             )}
           </div>
+          {formErrors.operator && (
+            <p className="text-red-500 text-sm flex items-center mt-2">
+              <AlertCircle className="w-4 h-4 mr-1" />
+              Selecione uma operadora
+            </p>
+          )}
         </div>
 
-        <div className="bg-white/10 rounded-lg p-6 space-y-6 border border-purple-400/30 shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20">
+        <div 
+          ref={infoPlanoRef}
+          className={`bg-white/10 rounded-lg p-6 space-y-6 border ${(formErrors.nomePlano || formErrors.vigencia) ? 'border-red-500 shadow-red-500/30' : 'border-purple-400/30'} shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20`}
+        >
           <h3 className="text-xl font-semibold text-white mb-4 flex items-center border-b border-purple-400/30 pb-3">
             <CheckCircle className="w-6 h-6 mr-3 text-purple-400" />
             Informações do Plano
@@ -525,10 +854,10 @@ export function IndividualPlanStep({
                 <input
                   type="text"
                   value={planData.nomePlano || ''}
-                  onChange={(e) => onPlanDataChange(prev => ({ ...prev, nomePlano: e.target.value }))}
-                  className="w-full px-6 py-4 bg-white/10 border border-purple-500/50 rounded-lg
+                  onChange={(e) => handlePlanNameChange(e.target.value)}
+                  className={`w-full px-6 py-4 bg-white/10 border ${formErrors.nomePlano ? 'border-red-500' : 'border-purple-500/50'} rounded-lg
                            text-white placeholder:text-white/60 focus:outline-none focus:border-white/40
-                           transition-colors"
+                           transition-colors`}
                   placeholder="Digite o nome do plano"
                   required
                 />
@@ -539,18 +868,27 @@ export function IndividualPlanStep({
                 <input
                   type="date"
                   value={planData.vigencia || ''}
-                  onChange={(e) => onPlanDataChange(prev => ({ ...prev, vigencia: e.target.value }))}
-                  className="w-full px-6 py-4 bg-white/10 border border-purple-500/50 rounded-lg
+                  onChange={(e) => handleVigenciaChange(e.target.value)}
+                  className={`w-full px-6 py-4 bg-white/10 border ${formErrors.vigencia ? 'border-red-500' : 'border-purple-500/50'} rounded-lg
                            text-white placeholder:text-white/60 focus:outline-none focus:border-white/40
-                           transition-colors [color-scheme:dark]"
+                           transition-colors [color-scheme:dark]`}
                   required
                 />
               </div>
             </FormField>
           </div>
+          {(formErrors.nomePlano || formErrors.vigencia) && (
+            <p className="text-red-500 text-sm flex items-center mt-2">
+              <AlertCircle className="w-4 h-4 mr-1" />
+              Preencha todas as informações do plano
+            </p>
+          )}
         </div>
 
-        <div className="bg-white/10 rounded-lg p-6 space-y-6 border border-purple-400/30 shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20">
+        <div 
+          ref={acomodacaoRef}
+          className={`bg-white/10 rounded-lg p-6 space-y-6 border ${formErrors.accommodation ? 'border-red-500 shadow-red-500/30' : 'border-purple-400/30'} shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20`}
+        >
           <h3 className="text-xl font-semibold text-white mb-4 flex items-center border-b border-purple-400/30 pb-3">
             <CheckCircle className="w-6 h-6 mr-3 text-purple-400" />
             Acomodação
@@ -560,10 +898,7 @@ export function IndividualPlanStep({
               title="Apartamento"
               icon={<Building size={32} className="text-purple-400" />}
               selected={planData.accommodation === 'private'}
-              onClick={() => onPlanDataChange(prev => ({ 
-                ...prev, 
-                accommodation: 'private'
-              }))}
+              onClick={() => handleAccommodationChange('private')}
             >
               {planData.accommodation === 'private' && <CheckIcon />}
             </Card>
@@ -571,17 +906,23 @@ export function IndividualPlanStep({
               title="Enfermaria"
               icon={<Bed size={32} className="text-purple-400" />}
               selected={planData.accommodation === 'shared'}
-              onClick={() => onPlanDataChange(prev => ({ 
-                ...prev, 
-                accommodation: 'shared'
-              }))}
+              onClick={() => handleAccommodationChange('shared')}
             >
               {planData.accommodation === 'shared' && <CheckIcon />}
             </Card>
           </div>
+          {formErrors.accommodation && (
+            <p className="text-red-500 text-sm flex items-center mt-2">
+              <AlertCircle className="w-4 h-4 mr-1" />
+              Selecione o tipo de acomodação
+            </p>
+          )}
         </div>
 
-        <div className="bg-white/10 rounded-lg p-6 space-y-6 border border-purple-400/30 shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20">
+        <div 
+          ref={dadosPlanoRef}
+          className={`bg-white/10 rounded-lg p-6 space-y-6 border ${(formErrors.value || formErrors.coparticipation) ? 'border-red-500 shadow-red-500/30' : 'border-purple-400/30'} shadow-lg shadow-purple-500/10 transition-all hover:shadow-purple-500/20`}
+        >
           <h3 className="text-xl font-semibold text-white mb-4 flex items-center border-b border-purple-400/30 pb-3">
             <CheckCircle className="w-6 h-6 mr-3 text-purple-400" />
             Dados do Plano
@@ -590,19 +931,20 @@ export function IndividualPlanStep({
           <div className="space-y-6">
             <FormField label="Valor do Plano">
               <div className="relative">
-                <input
+                <MaskedInput
                   type="text"
                   id="valor"
                   name="valor"
                   value={valorPlano}
-                  onChange={handleValorChange}
+                  onChange={handleValueChange}
+                  mask={masks.currency}
                   placeholder="R$ 0,00"
-                  className="w-full pl-12 pr-6 py-4 bg-white/10 border border-purple-500/50 rounded-lg
+                  className={`w-full pl-12 pr-6 py-4 bg-white/10 border ${formErrors.value ? 'border-red-500' : 'border-purple-500/50'} rounded-lg
                            text-white placeholder:text-white/60 focus:outline-none focus:border-white/40
-                           transition-colors"
+                           transition-colors`}
                 />
                 <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
-                  <DollarSign className="h-5 w-5 text-purple-400" />
+                  <DollarSign className="h-2 w-5 text-purple-400" />
                 </div>
               </div>
             </FormField>
@@ -616,10 +958,7 @@ export function IndividualPlanStep({
                   title="Sim Completa"
                   icon={<DollarSign size={32} className="text-purple-400" />}
                   selected={coparticipacao === 'completa'}
-                  onClick={() => {
-                    setCoparticipacao('completa');
-                    onPlanDataChange(prev => ({ ...prev, coparticipation: 'completa' }));
-                  }}
+                  onClick={() => handleCopartChange('completa')}
                 >
                   {coparticipacao === 'completa' && <CheckIcon />}
                 </Card>
@@ -627,10 +966,7 @@ export function IndividualPlanStep({
                   title="Sim Parcial"
                   icon={<Percent size={32} className="text-purple-400" />}
                   selected={coparticipacao === 'parcial'}
-                  onClick={() => {
-                    setCoparticipacao('parcial');
-                    onPlanDataChange(prev => ({ ...prev, coparticipation: 'parcial' }));
-                  }}
+                  onClick={() => handleCopartChange('parcial')}
                 >
                   {coparticipacao === 'parcial' && <CheckIcon />}
                 </Card>
@@ -638,16 +974,19 @@ export function IndividualPlanStep({
                   title="Não"
                   icon={<Ban size={32} className="text-purple-400" />}
                   selected={coparticipacao === 'nao'}
-                  onClick={() => {
-                    setCoparticipacao('nao');
-                    onPlanDataChange(prev => ({ ...prev, coparticipation: 'nao' }));
-                  }}
+                  onClick={() => handleCopartChange('nao')}
                 >
                   {coparticipacao === 'nao' && <CheckIcon />}
                 </Card>
               </div>
             </div>
           </div>
+          {(formErrors.value || formErrors.coparticipation) && (
+            <p className="text-red-500 text-sm flex items-center mt-2">
+              <AlertCircle className="w-4 h-4 mr-1" />
+              Preencha todos os dados do plano
+            </p>
+          )}
         </div>
 
         <div className="flex gap-4 mt-8">
@@ -660,21 +999,15 @@ export function IndividualPlanStep({
           </button>
           <button
             type="submit"
-            disabled={
-              !planData.type ||
-              !planData.modality ||
-              !planData.operator ||
-              !planData.accommodation ||
-              (planData.type === 'adhesion' && (!planData.administrator || !planData.association)) ||
-              !coparticipacao ||
-              !valorPlano
-            }
-            className="w-1/2 bg-gradient-to-r from-violet-600 via-purple-600 to-violet-600 py-4 px-6 border border-transparent shadow-lg text-base font-bold rounded-lg text-white hover:from-violet-700 hover:via-purple-700 hover:to-violet-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-1/2 bg-gradient-to-r from-violet-600 via-purple-600 to-violet-600 py-4 px-6 border border-transparent shadow-lg text-base font-bold rounded-lg text-white hover:from-violet-700 hover:via-purple-700 hover:to-violet-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 transition-all"
           >
             Continuar
           </button>
         </div>
       </form>
+
+      {/* Renderizar o modal de erro no final do componente */}
+      <ErrorModal />
     </div>
   );
 }
